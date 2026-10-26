@@ -129,6 +129,19 @@ fi
 
 # ---------- 6. 写企微配置 ----------
 say "写入企微配置"
+# trusted_ips：把探测到的出口 IP 写进去，体检时自动跟企微看到的 IP 比对。
+# 若运维已把某个 IP 加进企微后台白名单，可用第 6 个参数显式指定（逗号分隔）。
+TRUSTED_IPS="${6:-}"
+if [ -z "$TRUSTED_IPS" ] && [ -n "$OUT_IP" ]; then
+  TRUSTED_IPS="$OUT_IP"
+fi
+# 用 python 生成 JSON（比 shell 拼字符串可靠，避免转义问题）
+TRUSTED_IPS_JSON=$(python3 - "$TRUSTED_IPS" <<'PY'
+import json, sys
+ips = [x.strip() for x in sys.argv[1].split(",") if x.strip()] if len(sys.argv) > 1 else []
+print(json.dumps(ips, ensure_ascii=False))
+PY
+)
 cat > "$APP_DIR/wecom_config.json" <<EOF
 {
   "_说明": "企业微信扫码登录配置。修改后无需重启服务，下次请求会自动重新读取。",
@@ -138,11 +151,14 @@ cat > "$APP_DIR/wecom_config.json" <<EOF
   "base_url": "$BASE_URL",
   "redirect": "$REDIRECT",
   "_admin_userids说明": "管理员白名单：把你的企微 userid 填进来（数组，可多个）。这些 userid 扫码后自动是本系统管理员，保存即生效。",
-  "admin_userids": []
+  "admin_userids": [],
+  "_trusted_ips说明": "已登记到企微后台「企业可信 IP」的地址（数组）。体检时自动跟企微实际看到的出口 IP 比对，不一致会报警。",
+  "trusted_ips": $TRUSTED_IPS_JSON
 }
 EOF
 chmod 600 "$APP_DIR/wecom_config.json"
 echo "  已写入 $APP_DIR/wecom_config.json（权限 600）"
+[ -n "$TRUSTED_IPS" ] && echo "  trusted_ips: $TRUSTED_IPS（体检时自动与企微看到的 IP 比对）"
 
 # ---------- 7. systemd 服务 ----------
 say "配置 systemd 服务"

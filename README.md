@@ -74,6 +74,32 @@ curl http://127.0.0.1:8080/api/health
 >
 > **为什么必须加**：扫码后要把 code 换成成员身份（`auth/getuserinfo`），这个接口**强制校验可信 IP**。不加的后果是「二维码能出来、能扫、能拿到 code，但换不到身份、登不进来」——看起来像成功了，实际最后一步被拒，极易误判。
 
+### 4.3 让系统自动核对可信 IP（推荐）
+
+白名单填错 IP、或服务器换了出口，是最常见的「扫码登不进来」原因。这个功能会**自动比对**「你登记的 IP」和「企微实际看到的出口 IP」，不一致立刻报警：
+
+```bash
+# 在 wecom_config.json 里登记已加进企微后台的 IP（可多个）
+"trusted_ips": ["115.233.220.92"]
+```
+
+之后跑 `bash ai-tools-server/dev_check.sh`，会多出「可信 IP 核对」一项：
+
+```
+  ✅ 可信 IP 核对
+     企微看到的出口 IP 115.233.220.92 已在登记清单里
+```
+
+不一致时会直接告诉你该加哪个：
+
+```
+  ❌ 可信 IP 核对
+     企微看到的出口 IP 是 115.233.220.93，但登记清单里只有：115.233.220.92
+     → 把 115.233.220.93 加到企微后台「企业可信 IP」…
+```
+
+> `deploy.sh` 会自动把探测到的出口 IP 写进 `trusted_ips`，不用手填。
+
 ---
 
 ## 5. 目录结构
@@ -123,6 +149,7 @@ cp ai-tools-server/wecom_config.example.json ai-tools-server/wecom_config.json
 | `base_url` | 本服务对外地址（必须是 https），如 `https://aitoolbox.maihaoche.com` |
 | `redirect` | 上报给企微的回调地址。留空自动取 `{base_url}/api/login/wecom/callback` |
 | `admin_userids` | 管理员白名单数组。填你的企微 userid，扫码后即为管理员 |
+| `trusted_ips` | 已加进企微「企业可信 IP」的 IP 数组。体检时自动跟企微实际看到的出口 IP 比对，不一致就报警 |
 
 > **改这个文件保存即生效，不用重启服务**（已做热重载）。
 
@@ -145,7 +172,9 @@ cp ai-tools-server/wecom_config.example.json ai-tools-server/wecom_config.json
 | 登录页「扫码登录」变灰 | 企微三项配置缺 | 跑 `dev_check.sh` 看差哪项 | 否 |
 | 提示 `-31020` | 授权回调域没配或填错 | 按 §4.1 填域名 | 否 |
 | 提示 `60020` | 可信 IP 没加 | 按 §4.2 加服务器出口 IP | 否 |
+| 体检「可信 IP 核对」红 | 登记的 IP ≠ 企微看到的出口 IP | 照着提示把正确的 IP 加进白名单 | 否 |
 | 扫码成功但登不进来 | 同上（换身份接口也校验 IP） | 同上 | 否 |
+| 体检只显示「缺凭据」 | —— | **已修复**：现在凭据不对时其余各项也会照常显示 | 否 |
 | 改了配置不生效 | 文件权限或格式 | `ls -l wecom_config.json`（应 600）、`python3 -c "import json;json.load(open('wecom_config.json'))"` | 否 |
 
 **所有企微侧配置都是后台即时生效的，服务器侧配置保存即热重载——只有改代码才需要重新部署。**

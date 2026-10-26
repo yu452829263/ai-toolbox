@@ -10,5 +10,7 @@
   "_redirect说明": "上报给企微的 redirect_uri。留空则自动取 {base_url}/api/login/wecom/callback。",
   "redirect": "",
   "_admin_userids说明": "管理员白名单：把你的企微 userid 填进来（可多个）。这些 userid 扫码登录后自动拥有本系统「管理员」权限。不填则扫码进来只能是普通用户。",
-  "admin_userids": []
+  "admin_userids": [],
+  "_trusted_ips说明": "已登记到企微后台「企业可信 IP」的地址（可多个，数组）。体检时会拿它跟企微实际看到的出口 IP 自动比对，不一致立刻报警。填服务器那台机器的 curl -s https://ifconfig.me 结果。",
+  "trusted_ips": []
 }

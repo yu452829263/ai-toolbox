@@ -160,10 +160,37 @@ WECOM_REDIRECT = ""
 # 的死循环。填自己的 userid 即可（userid 可从企微管理后台「成员详情」看到，
 # 或用 diagnose 接口返回的出口信息配合 auth/getuserinfo 探测）。
 WECOM_ADMIN_USERIDS = []
+# 已登记到企微后台「企业可信 IP」的地址列表（可多个）。
+# 体检时用它跟「企微实际看到的本机出口 IP」自动比对：不一致立刻报警，
+# 免得部署完还得人工去两处 IP 之间来回对照。
+WECOM_TRUSTED_IPS = []
 # 配置热重载用的状态：记录 wecom_config.json 的 mtime 与上次载入的凭据指纹
 _wecom_cfg_mtime = None
 _wecom_cfg_fingerprint = ()
 _wecom_cfg_env_fp = ()
+
+
+def _parse_wecom_whitelists(cfg):
+    """解析两个白名单字段：管理员 userid 清单、已登记的可信 IP 清单。
+
+    环境变量优先，其次配置文件。两者都支持字符串（逗号/空格/分号分隔）或数组。
+
+    ★ 这个函数必须在 load_wecom_config 的**早退分支之前**也调用一次：
+      白名单常常只写在配置文件里，而环境变量只给凭据——
+      早退时不解析，白名单就会一直是上一次的旧值（这坑踩过一次）。
+    """
+    global WECOM_ADMIN_USERIDS, WECOM_TRUSTED_IPS
+
+    def pick(env_name, cfg_key):
+        raw = os.environ.get(env_name)
+        if raw is None or not str(raw).strip():
+            raw = cfg.get(cfg_key) or []
+        if isinstance(raw, str):
+            raw = [x for x in re.split(r"[,\s;]+", raw) if x]
+        return [str(x).strip() for x in raw if str(x).strip()]
+
+    WECOM_ADMIN_USERIDS = pick("WECOM_ADMIN_USERIDS", "admin_userids")
+    WECOM_TRUSTED_IPS = pick("WECOM_TRUSTED_IPS", "trusted_ips")
 
 
 def load_wecom_config(force=False):
@@ -175,6 +202,7 @@ def load_wecom_config(force=False):
     """
     global WECOM_CORP_ID, WECOM_AGENT_ID, WECOM_SECRET, WECOM_BASE_URL, WECOM_REDIRECT
     global WECOM_ADMIN_USERIDS
+    global WECOM_TRUSTED_IPS
     global _wecom_cfg_mtime, _wecom_cfg_fingerprint, _wecom_cfg_env_fp
     try:
         mt = os.path.getmtime(WECOM_CONFIG_FILE)
@@ -188,27 +216,27 @@ def load_wecom_config(force=False):
         except Exception as e:
             log("wecom_config.json 读取失败：%s" % e)
             cfg = {}
-    # 管理员白名单单独解析：它跟凭据是不是走环境变量无关，
-    # 必须在这里先读，否则「凭据全用环境变量」时白名单会被下面的早退分支跳过。
-    raw_admins = os.environ.get("WECOM_ADMIN_USERIDS")
-    if raw_admins is None or not str(raw_admins).strip():
-        raw_admins = cfg.get("admin_userids") or []
-    if isinstance(raw_admins, str):
-        raw_admins = [x for x in re.split(r"[,\s;]+", raw_admins) if x]
-    WECOM_ADMIN_USERIDS = [str(x).strip() for x in raw_admins if str(x).strip()]
+    # 白名单类字段单独解析：它们跟凭据是不是走环境变量无关，
+    # 必须在早退分支之前也解析一次（否则「凭据全用环境变量」时白名单读不到）。
+    _parse_wecom_whitelists(cfg)
     # 环境变量的取值也进缓存键：容器里常用环境变量传凭据，
     # 改了环境变量（重启容器）必须能重新读进来
     env_fp = (os.environ.get("WECOM_CORP_ID"), os.environ.get("WECOM_AGENT_ID"),
               os.environ.get("WECOM_SECRET"), os.environ.get("WECOM_BASE_URL"),
-              os.environ.get("WECOM_REDIRECT"), os.environ.get("WECOM_ADMIN_USERIDS"))
+              os.environ.get("WECOM_REDIRECT"), os.environ.get("WECOM_ADMIN_USERIDS"),
+              os.environ.get("WECOM_TRUSTED_IPS"))
     # 环境变量已给全 → 文件改动无意义，直接跳过读盘
+    # ⚠️ 但白名单类字段（admin_userids / trusted_ips）仍必须重新解析：
+    #    它们可能只写在配置文件里，环境变量并没有给。早退前不解析的话，
+    #    「凭据全用环境变量」时白名单会一直是上一次的旧值。
     env_full = all((os.environ.get(k) for k in
                     ("WECOM_CORP_ID", "WECOM_AGENT_ID", "WECOM_SECRET", "WECOM_BASE_URL")))
     if not force and env_full:
+        _parse_wecom_whitelists(cfg)
         _wecom_cfg_mtime = mt
         _wecom_cfg_fingerprint = (
             WECOM_CORP_ID, WECOM_AGENT_ID, WECOM_SECRET, WECOM_BASE_URL, WECOM_REDIRECT,
-            tuple(WECOM_ADMIN_USERIDS))
+            tuple(WECOM_ADMIN_USERIDS), tuple(WECOM_TRUSTED_IPS))
         _wecom_cfg_env_fp = env_fp
         return wecom_enabled()
     if (not force and mt is not None and mt == _wecom_cfg_mtime
@@ -221,7 +249,7 @@ def load_wecom_config(force=False):
     WECOM_REDIRECT = (os.environ.get("WECOM_REDIRECT") or cfg.get("redirect") or "").strip().rstrip("/")
     _wecom_cfg_mtime = mt
     fp = (WECOM_CORP_ID, WECOM_AGENT_ID, WECOM_SECRET, WECOM_BASE_URL, WECOM_REDIRECT,
-          tuple(WECOM_ADMIN_USERIDS))
+          tuple(WECOM_ADMIN_USERIDS), tuple(WECOM_TRUSTED_IPS))
     # 凭据/地址变了 → 旧的 access_token 立即作废，避免拿旧凭据的 token 去换身份
     if _wecom_cfg_fingerprint and fp != _wecom_cfg_fingerprint:
         _wecom_token_cache["token"] = ""
@@ -330,6 +358,7 @@ def wecom_diagnose():
     ③ 出口 IP 是否在「企业可信 IP」白名单里
     ④ 对外域名能否打开本服务
     ⑤ 管理员白名单是否配了（决定扫码后能不能进管理后台）
+    ⑥ 已登记的可信 IP 与企微实际看到的出口 IP 是否一致
 
     只报告探测到的事实（企微返回什么就说什么），不臆测。
     """
@@ -342,6 +371,7 @@ def wecom_diagnose():
         "redirect_host": wecom_redirect_host(),
         "egress_ip": "",
         "admin_userids": list(WECOM_ADMIN_USERIDS),
+        "trusted_ips": list(WECOM_TRUSTED_IPS),
         "items": [],
         "todo": [],
     }
@@ -351,15 +381,27 @@ def wecom_diagnose():
                               "detail": detail, "action": action})
 
     # ① 凭据
+    tok = ""
     if not (WECOM_CORP_ID and WECOM_AGENT_ID and WECOM_SECRET):
         add("credentials", False, "应用凭据",
             "缺少 CorpID / AgentId / Secret",
             "填 wecom_config.json 或环境变量 WECOM_CORP_ID / WECOM_AGENT_ID / WECOM_SECRET")
-        return out
-    tok, err = wecom_access_token()
-    add("credentials", bool(tok), "应用凭据",
-        "CorpID/AgentId/Secret 有效，已取到 access_token" if tok else (err or "换取失败"),
-        "" if tok else "核对企微后台该应用的 AgentId 与 Secret 是否配对")
+        # ⚠️ 这里**不能提前 return**：凭据没配好时，运维更需要看到其余各项
+        #    （授权回调域、可信 IP、对外可达…）—— 否则只看到「缺凭据」，
+        #    补好凭据再跑一次才知道还差什么，来回好几轮。
+        #    没 token 的检查项各自降级处理即可。
+    else:
+        tok, err = wecom_access_token()
+        add("credentials", bool(tok), "应用凭据",
+            "CorpID/AgentId/Secret 有效，已取到 access_token" if tok else (err or "换取失败"),
+            "" if tok else "核对企微后台该应用的 AgentId 与 Secret 是否配对")
+        # 企微在错误信息里会回报「它看到的本机出口 IP」（from ip: x.x.x.x）——
+        # 这比本机自己探测更权威（能反映代理/NAT 后的真实出口）。
+        # 凭据有问题时也要抓出来：白名单填错 IP 的人最爱漏看这条。
+        if not tok and err:
+            m = re.search(r"from ip:\s*([0-9.]+)", err)
+            if m:
+                out["egress_ip"] = m.group(1)
 
     # ② 授权回调域（真发一次申请，拿企微的判定）
     host = out["redirect_host"]
@@ -368,15 +410,21 @@ def wecom_diagnose():
             "缺少 redirect_uri 域名",
             "设置 WECOM_BASE_URL 或 WECOM_REDIRECT")
     else:
-        data, qerr = wecom_qr_fetch()
-        if data:
-            add("callback_domain", True, "授权回调域",
-                "redirect_uri 域名「%s」已通过企微校验" % host)
-        else:
+        if not tok:
+            # 没 token 就验不了回调域，但**该填什么域名照样要告诉运维**
             add("callback_domain", False, "授权回调域",
-                qerr or "校验失败",
-                "「企业微信管理后台 → 应用管理 → 自建应用 → AgentId %s → 企业微信授权登录 → "
-                "设置 → 设置授权回调域」填入：%s" % (WECOM_AGENT_ID, host))
+                "未取到 access_token，暂时无法校验（凭据配好后会自动重测）",
+                "需要在企微后台登记的域名是：%s" % host)
+        else:
+            data, qerr = wecom_qr_fetch()
+            if data:
+                add("callback_domain", True, "授权回调域",
+                    "redirect_uri 域名「%s」已通过企微校验" % host)
+            else:
+                add("callback_domain", False, "授权回调域",
+                    qerr or "校验失败",
+                    "「企业微信管理后台 → 应用管理 → 自建应用 → AgentId %s → 企业微信授权登录 → "
+                    "设置 → 设置授权回调域」填入：%s" % (WECOM_AGENT_ID, host))
 
     # ③ 可信 IP
     #   探测方式：用 auth/getuserinfo 带一个假 code。企微**先校验 IP 再校验 code**，
@@ -410,6 +458,72 @@ def wecom_diagnose():
             add("trusted_ip", True, "企业可信 IP",
                 "企微未报 60020，本机出口 IP 已放行（探测 code 无效属预期）"
                 + ("　本机探测到的出口 IP：%s" % out["egress_ip"] if out["egress_ip"] else ""))
+
+        # ③-b 已登记 IP 与实际出口 IP 是否一致
+        #   企微放行了当前出口 IP，但它可能是**另一个** IP（多出口/NAT 场景）。
+        #   拿「登记清单」跟「企微这次看到的 IP」比一比，不一致就是白名单填错了，
+        #   或者服务器换出口了。提前发现，比扫码失败后排查省事得多。
+        actual = out.get("egress_ip") or ""
+        if WECOM_TRUSTED_IPS:
+            listed = list(WECOM_TRUSTED_IPS)
+            out["trusted_ips"] = listed
+            if actual:
+                if actual in listed:
+                    add("trusted_ip_match", True, "可信 IP 核对",
+                        "企微看到的出口 IP %s 已在登记清单里" % actual,
+                        "")
+                else:
+                    add("trusted_ip_match", False, "可信 IP 核对",
+                        "企微看到的出口 IP 是 %s，但登记清单里只有：%s。"
+                        "说明白名单没覆盖当前出口（服务器换出口了 / 登记时填错了 IP）"
+                        % (actual, "、".join(listed)),
+                        "把 %s 加到企微后台「企业可信 IP」（应用详情页 → 开发者接口 → "
+                        "企业可信 IP → 配置），或把 wecom_config.json 的 trusted_ips "
+                        "更新成实际出口 IP" % actual)
+            else:
+                add("trusted_ip_match", True, "可信 IP 核对",
+                    "登记清单：%s（本次没探到企微看到的出口 IP，无法自动比对）"
+                    % "、".join(listed), "")
+        else:
+            out["trusted_ips"] = []
+            add("trusted_ip_match", True, "可信 IP 核对",
+                "未在 wecom_config.json 的 trusted_ips 里登记已放行的 IP，"
+                "跳过自动比对（如需自动核对，把企微后台已登记的 IP 填进去）", "")
+    else:
+        # 没拿到 access_token → 探不了企微，但**企微在错误信息里回报的出口 IP
+        # 仍然可用**（gettoken 失败时会带 from ip），那是权威值。
+        # 拿它（退而求其次用本机探测值）跟登记清单比对。
+        out["trusted_ips"] = list(WECOM_TRUSTED_IPS)
+        actual = out.get("egress_ip") or _public_ip()
+        src = "企微看到的" if out.get("egress_ip") else "本机探测到的"
+        if WECOM_TRUSTED_IPS and actual:
+            listed = list(WECOM_TRUSTED_IPS)
+            if actual in listed:
+                add("trusted_ip_match", True, "可信 IP 核对",
+                    "%s出口 IP %s 已在登记清单里" % (src, actual),
+                    "")
+            else:
+                # 本机探测值与企微看到的不一致 → 多出口/NAT 的信号，一并点出来
+                local = _public_ip()
+                extra = ""
+                if local and local != actual:
+                    extra = ("　注意：本机探测到的是 %s，与企微看到的 %s 不同，"
+                             "说明这台机器有多个出口（代理/NAT），登记哪个要看企微那边。"
+                             % (local, actual))
+                add("trusted_ip_match", False, "可信 IP 核对",
+                    "%s出口 IP 是 %s，但登记清单里只有：%s。"
+                    "说明白名单没覆盖当前出口（服务器换出口了 / 登记时填错了 IP）"
+                    % (src, actual, "、".join(listed)) + extra,
+                    "把 %s 加到企微后台「企业可信 IP」（应用详情页 → 开发者接口 → "
+                    "企业可信 IP → 配置），或把 wecom_config.json 的 trusted_ips "
+                    "更新成实际出口 IP" % actual)
+        else:
+            add("trusted_ip_match", True, "可信 IP 核对",
+                ("登记清单：%s（暂时无法探测到企微看到的出口 IP，无法自动比对）"
+                 % "、".join(WECOM_TRUSTED_IPS)) if WECOM_TRUSTED_IPS
+                else "未在 wecom_config.json 的 trusted_ips 里登记已放行的 IP，"
+                     "跳过自动比对（如需自动核对，把企微后台已登记的 IP 填进去）",
+                "")
 
     # ④ 对外可达性（域名能否打开本服务）
     if WECOM_BASE_URL:

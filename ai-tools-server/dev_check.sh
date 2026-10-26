@@ -99,6 +99,9 @@ print("     当前 redirect_uri：%s" % (d.get("redirect_uri") or "（未配置�
 print("     需要登记的域名：  %s" % (d.get("redirect_host") or "（未配置）"))
 if d.get("egress_ip"):
     print("     企微看到的出口IP：%s  ← 填到「应用管理→自建应用(1000196)→应用详情页→企业可信 IP→配置」" % d["egress_ip"])
+_tl = d.get("trusted_ips") or []
+if _tl:
+    print("     已登记的白名单IP：%s" % "、".join(_tl))
 print()
 for it in d.get("items") or []:
     print(("  ✅ " if it.get("ok") else "  ❌ ") + (it.get("title") or ""))
@@ -116,7 +119,7 @@ if todo:
   if echo "$DIAG" | python3 -c '
 import json,sys
 d=json.load(sys.stdin).get("data") or {}
-keys=("credentials","callback_domain","trusted_ip")
+keys=("credentials","callback_domain","trusted_ip","trusted_ip_match")
 rel=[i for i in (d.get("items") or []) if i.get("key") in keys]
 sys.exit(0 if rel and all(i.get("ok") for i in rel) else 1)
 ' 2>/dev/null; then ok=$((ok+1)); else fail=$((fail+1)); fi

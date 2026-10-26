@@ -38,13 +38,24 @@ ai-tools-server/
 │   └── index.html         前端页面（单文件自包含，图片已内联）
 ├── seed/
 │   └── seed_tools.json    9 个真实工具的初始数据（首次启动自动导入；上线前用 --clear 清掉）
+├── tests/                 回归测试
+│   ├── test_wecom_qr.py         企微二维码链路（零依赖）
+│   ├── test_wecom_login.py       企微登录链路（零依赖）
+│   ├── test_admin_whitelist.py   管理员白名单（零依赖）
+│   ├── test_trusted_ip.py        可信 IP 自动核对（零依赖）
+│   ├── test_login_ui.js          登录页 UI（需 puppeteer）
+│   ├── test_upload_login_gate.js 上传入口登录门禁（需 puppeteer）
+│   └── test_upload_real_login.js 真实账号登录闭环（需 puppeteer）
 ├── data/                  ★ 运行时数据（需备份 / 需可写）
 │   ├── tools.db           SQLite 数据库
 │   └── uploads/           用户上传的附件原文件
 ├── deploy/
+│   ├── deploy.sh          一键部署脚本
 │   ├── nginx.conf.example nginx 反向代理示例
 │   ├── ai-tools.service   systemd 常驻服务示例
-│   └── Dockerfile         容器化部署示例
+│   └── docker/            容器化三个文件（Dockerfile / compose / 说明）
+├── wecom_config.example.json      企微配置模板（复制成 wecom_config.json 填值）
+├── accounts_preset.example.json  预置账号模板（可选）
 └── tools/                 ★ 随包分发的真实工具原件（只读，走 /tools/xxx 下载）
     ├── macOS日历助手-ical-cli.zip
     ├── 滴答清单助手-dida-cli.zip
@@ -56,6 +67,9 @@ ai-tools-server/
     ├── 合同初审机器人-使用说明.md
     └── 薪资计算机器人-使用说明.md
 ```
+
+> ⚠️ `wecom_config.json`（含企微 Secret）与 `accounts_preset.json`（含默认密码）
+> **不放在版本库里**，仓库里只有 `.example` 模板。复制模板改名为正式文件即可。
 
 ---
 
@@ -150,7 +164,7 @@ python3 server.py --reseed
 
 **第 2 步：填配置**
 
-编辑同目录的 `wecom_config.json`：
+编辑同目录的 `wecom_config.json`（仓库里给的是 `wecom_config.example.json` 模板，复制过来填）：
 
 ```json
 {
@@ -159,12 +173,16 @@ python3 server.py --reseed
   "secret": "你的Secret",
   "base_url": "https://aitoolbox.maihaoche.com",
   "redirect": "https://aitoolbox.maihaoche.com/api/login/wecom/callback",
-  "admin_userids": ["你的企微userid"]
+  "admin_userids": ["你的企微userid"],
+  "trusted_ips": ["115.233.220.92"]
 }
 ```
 
 `base_url` = 本服务的对外访问地址，**必须是 https**（企微强制要求）。
 `redirect` = 上报给企微、用来核对「授权回调域」的地址。
+`trusted_ips` = 已加进企微后台「企业可信 IP」的地址（可多个）。
+填了之后体检会**自动比对**「登记的 IP」和「企微实际看到的出口 IP」，不一致立刻报警——
+白名单填错、服务器换出口这类问题一眼就能发现，不用等扫码失败才排查。
 
 ### 4.3.1 怎么让自己扫码后就是管理员
 
@@ -349,6 +367,7 @@ curl http://127.0.0.1:8080/api/health
 | `WECOM_BASE_URL` | 空 | 本服务对外 https 地址（用户浏览器实际打开的地址） |
 | `WECOM_REDIRECT` | 空 | 上报给企微、用来核对「授权回调域」的地址。留空则自动取 `{WECOM_BASE_URL}/api/login/wecom/callback`。本机联调时把它固定为正式域名，本机/线上/换隧道都不用再改企微后台 |
 | `WECOM_ADMIN_USERIDS` | 空 | 管理员白名单，逗号分隔的企微 userid。这些 userid 扫码登录后自动是本系统管理员（详见 4.3.1 节） |
+| `WECOM_TRUSTED_IPS` | 空 | 已加进企微后台「企业可信 IP」的地址，逗号分隔。体检时自动跟企微实际看到的出口 IP 比对，不一致就报警 |
 | `TOOLS_DIR` | `./tools` | 随包分发的真实工具原件目录（只读，`/tools/<文件名>` 下载） |
 
 示例：
