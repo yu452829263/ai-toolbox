@@ -1,0 +1,16 @@
+[
+  {
+    "username": "admin",
+    "name": "超级管理员",
+    "dept": "产品技术中心",
+    "password": "改这里设成你的密码",
+    "role": "admin"
+  },
+  {
+    "username": "guest",
+    "name": "游客体验号",
+    "dept": "产品技术中心",
+    "password": "改这里设成你的密码",
+    "role": "user"
+  }
+]

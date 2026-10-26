@@ -1,0 +1,67 @@
+# ---- 运行时数据（不进版本库）----
+ai-tools-server/data/
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# ---- 真实配置（含 Secret / 默认密码，绝不进版本库）----
+ai-tools-server/wecom_config.json
+ai-tools-server/accounts_preset.json
+wecom_config.json
+accounts_preset.json
+*.secret
+*.key
+
+# ---- 打包产物（由 build_zip.py 现场生成）----
+ai-tools-server.zip
+ai-tools-docker.zip
+serve.zip
+
+# ---- 前端便捷副本（由 build_zip.py 从 ai-tools-server/web/index.html 同步生成）----
+# 真正的前端源码只有一份：ai-tools-server/web/index.html
+demo4-卡片风滚动分页.html
+
+# ---- Python ----
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+env/
+
+# ---- Node ----
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# ---- macOS ----
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+
+# ---- 编辑器 ----
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ---- 历史设计稿（不参与部署，已归档在备份包里）----
+demo1-卡片风.html
+demo2-赛博朋克风.html
+demo3-Terminal风.html
+demo5-便当盒布局风.html
+assets/
+
+# ---- 备份包 ----
+备份-*.zip
+
+# ---- 本地临时文件 ----
+*.log
+*.tmp
+*.bak

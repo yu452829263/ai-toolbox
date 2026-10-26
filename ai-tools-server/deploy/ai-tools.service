@@ -1,0 +1,36 @@
+[Unit]
+Description=AI 成果库 · 内部 AI 工具平台（轻量后端）
+Documentation=file:/opt/ai-tools-server/README.md
+After=network.target
+
+[Service]
+Type=simple
+
+# ── 必改项 ──────────────────────────────────────────────
+# 程序目录（要指向 ai-tools-server 目录本身）
+WorkingDirectory=/opt/ai-tools-server
+# 运行用户（不要用 root；需对该目录有写权限，尤其 data/）
+User=aitools
+Group=aitools
+
+# 启动命令：只监听本机，外部访问交给 nginx
+Environment=HOST=127.0.0.1
+Environment=PORT=8080
+Environment=DATA_DIR=/opt/ai-tools-server/data
+Environment=MAX_UPLOAD_MB=50
+ExecStart=/usr/bin/python3 /opt/ai-tools-server/server.py
+
+# 异常退出自动重启
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+# 基本加固
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/ai-tools-server/data
+
+[Install]
+WantedBy=multi-user.target

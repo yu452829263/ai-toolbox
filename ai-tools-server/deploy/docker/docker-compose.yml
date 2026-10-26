@@ -1,0 +1,13 @@
+services:
+  ai-tools:
+    build: .
+    image: ai-tools:1.0
+    container_name: ai-tools
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - /data/ai-tools:/app/data
+      # 企微配置：挂载覆盖镜像内的空模板，改配置不用重新 build 镜像。
+      # （文件不存在时 docker 会建目录，所以先 touch 一个再启动）
+      - ./wecom_config.json:/app/wecom_config.json:ro

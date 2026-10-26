@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>开票资料助手</title>
+<script src="https://cdn.jsdelivr.net/npm/@tencent-ai/workbuddy-cloud-sdk@dev/lib/index.global.js"></script>
+<style>
+  :root {
+    --bg: #f5f7fa;
+    --card: #ffffff;
+    --border: #e5e9f0;
+    --text: #1f2d3d;
+    --muted: #8492a6;
+    --primary: #2f6bff;
+    --primary-light: #eaf0ff;
+    --danger: #e64c4c;
+    --ok: #2fa36b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px;
+  }
+  .container { max-width: 1080px; margin: 0 auto; padding: 24px 16px 60px; }
+  header.app-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  header.app-header h1 { font-size: 22px; display: flex; align-items: center; gap: 10px; }
+  header.app-header .logo {
+    width: 34px; height: 34px; border-radius: 9px; background: var(--primary);
+    color: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+  .data-count { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .cloud-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px;
+    color: var(--ok); background: #e9f7f0; padding: 3px 10px; border-radius: 20px; }
+  .cloud-badge.off { color: var(--danger); background: #fdeeee; }
+
+  .tabs { display: flex; gap: 8px; margin-bottom: 20px; background: var(--card);
+    padding: 6px; border-radius: 12px; border: 1px solid var(--border); }
+  .tabs button {
+    flex: 1; border: none; background: transparent; padding: 10px 0;
+    border-radius: 8px; font-size: 14px; cursor: pointer; color: var(--muted);
+    font-weight: 500; transition: all .15s;
+  }
+  .tabs button.active { background: var(--primary); color: #fff; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 22px; margin-bottom: 18px;
+  }
+  .card h2 { font-size: 16px; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .card h2 .tag { font-size: 12px; color: var(--primary); background: var(--primary-light);
+    padding: 2px 8px; border-radius: 20px; font-weight: 400; }
+
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .form-grid .full { grid-column: 1 / -1; }
+  .field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px; }
+  .field label .req { color: var(--danger); }
+  .field input, .field select, .field textarea {
+    width: 100%; padding: 9px 11px; border: 1px solid var(--border);
+    border-radius: 8px; font-size: 14px; background: #fbfcfe; outline: none;
+    font-family: inherit; transition: border .15s;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus {
+    border-color: var(--primary); background: #fff;
+  }
+  .field textarea { resize: vertical; min-height: 64px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px; border: none;
+    border-radius: 8px; padding: 9px 18px; font-size: 14px; cursor: pointer;
+    font-weight: 500; transition: all .15s;
+  }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn-ghost { background: var(--primary-light); color: var(--primary); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* 客户选择 */
+  .search-wrap { position: relative; }
+  .search-wrap input { width: 100%; }
+  .search-results {
+    position: absolute; top: 42px; left: 0; right: 0; background: #fff;
+    border: 1px solid var(--border); border-radius: 10px; z-index: 30;
+    max-height: 260px; overflow-y: auto; box-shadow: 0 8px 24px rgba(31,45,61,.1);
+    display: none;
+  }
+  .search-results.show { display: block; }
+  .search-results .item {
+    padding: 10px 14px; cursor: pointer; border-bottom: 1px solid #f2f4f8;
+  }
+  .search-results .item:last-child { border-bottom: none; }
+  .search-results .item:hover { background: var(--primary-light); }
+  .search-results .item .name { font-weight: 600; }
+  .search-results .item .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  /* 资料展示 */
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .info-item { background: #f8fafc; border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 14px; }
+  .info-item .k { font-size: 12px; color: var(--muted); margin-bottom: 3px;
+    display: flex; justify-content: space-between; }
+  .info-item .k .copy { cursor: pointer; color: var(--primary); font-size: 12px; }
+  .info-item .v { font-size: 14px; font-weight: 500; word-break: break-all; }
+  .info-item.full { grid-column: 1 / -1; }
+
+  .empty-tip { text-align: center; color: var(--muted); padding: 30px 0; font-size: 13px; }
+
+  /* 金额计算 */
+  .calc-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+  .calc-result { background: var(--primary-light); border-radius: 10px;
+    padding: 12px 16px; display: flex; gap: 24px; flex-wrap: wrap; }
+  .calc-result .num { font-size: 18px; font-weight: 700; color: var(--primary); }
+
+  /* 资料库表格 */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #f0f2f6; white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; background: #fafbfd; position: sticky; top: 0; }
+  td.actions button { margin-right: 6px; border: none; background: none; cursor: pointer;
+    font-size: 13px; padding: 3px 6px; border-radius: 5px; }
+  td.actions .edit { color: var(--primary); }
+  td.actions .del { color: var(--danger); }
+  td.actions button:hover { background: #f0f2f6; }
+  .toolbar { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+  .toolbar input[type=text] { flex: 1; min-width: 200px; padding: 9px 11px;
+    border: 1px solid var(--border); border-radius: 8px; font-size: 14px; outline: none; }
+  .toolbar input[type=text]:focus { border-color: var(--primary); }
+
+  textarea#importArea { width: 100%; min-height: 140px; padding: 10px; border: 1px solid var(--border);
+    border-radius: 8px; font-size: 13px; font-family: Consolas, monospace; outline: none; }
+  .hint { font-size: 12px; color: var(--muted); line-height: 1.7; margin-top: 8px; }
+  .hint code { background: #f0f2f6; padding: 1px 5px; border-radius: 4px; }
+
+  /* toast */
+  #toast {
+    position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: #1f2d3d; color: #fff; padding: 10px 22px; border-radius: 24px;
+    font-size: 13px; opacity: 0; pointer-events: none; transition: all .25s; z-index: 99;
+    max-width: 80vw;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  .modal-mask { position: fixed; inset: 0; background: rgba(31,45,61,.4); z-index: 50;
+    display: none; align-items: center; justify-content: center; padding: 20px; }
+  .modal-mask.show { display: flex; }
+  .modal { background: #fff; border-radius: 14px; width: 100%; max-width: 640px;
+    max-height: 88vh; overflow-y: auto; padding: 24px; }
+  .modal h3 { margin-bottom: 16px; font-size: 16px; }
+  .modal .btns { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+
+  @media (max-width: 640px) {
+    .form-grid, .info-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header class="app-header">
+    <h1><span class="logo">票</span>开票资料助手</h1>
+    <div class="data-count">
+      <span class="cloud-badge" id="cloudBadge">☁ 云端已连接</span>
+      共 <b id="totalCount">0</b> 家客户资料
+    </div>
+  </header>
+
+  <div class="tabs">
+    <button class="active" data-tab="invoice">开票申请单</button>
+    <button data-tab="library">客户资料库</button>
+    <button data-tab="import">导入 / 对接</button>
+  </div>
+
+  <!-- ============ 开票申请单 ============ -->
+  <div id="tab-invoice">
+    <div class="card">
+      <h2>① 选择客户 <span class="tag">输入名称自动匹配</span></h2>
+      <div class="field search-wrap">
+        <input type="text" id="customerSearch" placeholder="输入客户名称或简称，如：腾讯 / 科技有限公司" autocomplete="off">
+        <div class="search-results" id="searchResults"></div>
+      </div>
+      <div id="customerInfo" style="margin-top:14px;"></div>
+    </div>
+
+    <div class="card" id="applyCard" style="display:none;">
+      <h2>② 开票申请单 <span class="tag">资料已自动填充</span></h2>
+      <div class="form-grid">
+        <div class="field full"><label>客户名称（发票抬头）</label><input type="text" id="f_name"></div>
+        <div class="field"><label>纳税人识别号</label><input type="text" id="f_taxNo"></div>
+        <div class="field"><label>地址电话</label><input type="text" id="f_addressPhone"></div>
+        <div class="field"><label>开户银行</label><input type="text" id="f_bank"></div>
+        <div class="field"><label>银行账号</label><input type="text" id="f_account"></div>
+        <div class="field full"><label>开票内容 / 备注</label><textarea id="f_remark" placeholder="如：软件开发服务费 * 1，本期项目款"></textarea></div>
+      </div>
+      <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="copyInvoiceText()">📋 一键复制开票资料</button>
+        <button class="btn btn-ghost" onclick="exportApplyTxt()">⬇️ 导出申请单 (.txt)</button>
+      </div>
+      <div style="margin-top:8px;">
+        <textarea id="copyPreview" readonly style="width:100%; min-height:120px; padding:10px;
+          border:1px solid var(--border); border-radius:8px; font-size:13px; font-family:Consolas,monospace;
+          background:#f8fafc; color:var(--muted);"></textarea>
+      </div>
+    </div>
+
+    <div class="card" id="calcCard" style="display:none;">
+      <h2>③ 金额 / 税额速算</h2>
+      <div class="calc-row">
+        <div class="field" style="width:180px;"><label>开票金额</label>
+          <input type="number" id="calcAmount" placeholder="0.00" oninput="calcTax()"></div>
+        <div class="field" style="width:150px;"><label>税率</label>
+          <select id="calcRate" onchange="calcTax()">
+            <option value="0.13">13%</option><option value="0.09">9%</option>
+            <option value="0.06" selected>6%</option><option value="0.03">3%</option>
+            <option value="0.01">1%</option><option value="0">免税 / 0%</option>
+          </select></div>
+        <div class="field" style="width:170px;"><label>金额口径</label>
+          <select id="calcMode" onchange="calcTax()">
+            <option value="in">含税金额</option><option value="out">不含税金额</option>
+          </select></div>
+      </div>
+      <div class="calc-result" style="margin-top:14px;" id="calcResult">
+        <div>不含税金额 <span class="num" id="rOut">—</span></div>
+        <div>税额 <span class="num" id="rTax">—</span></div>
+        <div>价税合计 <span class="num" id="rTotal">—</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 客户资料库 ============ -->
+  <div id="tab-library" style="display:none;">
+    <div class="card">
+      <h2>客户开票资料库 <span class="tag">团队共享 · 云端存储</span></h2>
+      <div class="toolbar">
+        <input type="text" id="libSearch" placeholder="🔍 搜索客户名称 / 简称 / 税号" oninput="renderLibrary()">
+        <button class="btn btn-primary" onclick="openEditor()">＋ 新增客户</button>
+        <button class="btn btn-ghost" onclick="refreshData(this)">🔄 刷新</button>
+        <button class="btn btn-ghost" onclick="exportCSV()">⬇️ 导出 CSV</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>客户名称</th><th>简称</th><th>税号</th><th>开户银行</th><th>银行账号</th><th>地址电话</th><th style="width:110px;">操作</th>
+          </tr></thead>
+          <tbody id="libBody"></tbody>
+        </table>
+      </div>
+      <div id="libEmpty" class="empty-tip" style="display:none;">暂无客户资料，点击右上角「新增客户」或到「导入 / 对接」页批量导入</div>
+    </div>
+  </div>
+
+  <!-- ============ 导入 / 对接 ============ -->
+  <div id="tab-import" style="display:none;">
+    <div class="card">
+      <h2>批量导入（粘贴 Excel / CSV 数据）</h2>
+      <div class="field">
+        <textarea id="importArea" placeholder="直接从 Excel 复制整列/整表粘贴进来，每行一个客户，字段按顺序：客户名称, 简称, 税号, 地址, 电话, 开户银行, 银行账号, 备注&#10;&#10;示例：&#10;深圳市示例科技有限公司, 示例科技, 91440300MA5XXXXXXX, 深圳市南山区科技园XX路XX号, 0755-12345678, 招商银行深圳科技园支行, 755912345610801, 项目客户"></textarea>
+      </div>
+      <div class="hint">支持制表符（Tab）或逗号分隔，Excel 中直接复制区域即可。客户名称或税号相同的记录会自动覆盖更新。</div>
+      <div style="margin-top:14px; display:flex; gap:10px;">
+        <button class="btn btn-primary" id="importBtn" onclick="doImport(this)">导入到云端</button>
+        <button class="btn btn-ghost" onclick="downloadTemplate()">⬇️ 下载导入模板 (CSV)</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>对接公司系统 <span class="tag">进阶</span></h2>
+      <div class="form-grid">
+        <div class="field full"><label>公司系统接口地址（返回 JSON 数组即可）</label>
+          <input type="text" id="apiUrl" placeholder="https://你的系统地址/api/invoice-info"></div>
+      </div>
+      <div style="margin-top:14px; display:flex; gap:10px;">
+        <button class="btn btn-primary" onclick="fetchFromApi()">从系统拉取并入库</button>
+      </div>
+      <div class="hint">
+        要求公司系统：① 返回 JSON 数组，字段为 <code>name / shortName / taxNo / address / phone / bank / account / remark</code>（见下方示例）；
+        ② 允许本页面的域名跨域访问（CORS）。若公司系统暂无接口，可先定期用「批量导入」维护数据。<br>
+        返回示例：<code>[{"name":"深圳市XX有限公司","taxNo":"91440300MA5XXXXXXX","address":"...","phone":"...","bank":"...","account":"..."}]</code>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 编辑弹窗 -->
+<div class="modal-mask" id="editModal">
+  <div class="modal">
+    <h3 id="editTitle">新增客户</h3>
+    <div class="form-grid">
+      <div class="field"><label>客户名称 <span class="req">*</span></label><input type="text" id="e_name"></div>
+      <div class="field"><label>简称</label><input type="text" id="e_shortName"></div>
+      <div class="field"><label>纳税人识别号</label><input type="text" id="e_taxNo"></div>
+      <div class="field"><label>电话</label><input type="text" id="e_phone"></div>
+      <div class="field full"><label>注册地址</label><input type="text" id="e_address"></div>
+      <div class="field"><label>开户银行</label><input type="text" id="e_bank"></div>
+      <div class="field"><label>银行账号</label><input type="text" id="e_account"></div>
+      <div class="field full"><label>备注</label><input type="text" id="e_remark"></div>
+    </div>
+    <div class="btns">
+      <button class="btn btn-ghost" onclick="closeEditor()">取消</button>
+      <button class="btn btn-primary" id="saveBtn" onclick="saveEditor()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 下载兜底弹窗 -->
+<div class="modal-mask" id="fallbackModal">
+  <div class="modal">
+    <h3 id="fbTitle">获取文件</h3>
+    <div class="hint" id="fbTip" style="margin-bottom:12px;"></div>
+    <textarea id="fbText" readonly style="width:100%; min-height:180px; padding:10px;
+      border:1px solid var(--border); border-radius:8px; font-size:13px;
+      font-family:Consolas,monospace; background:#f8fafc;"></textarea>
+    <div class="btns">
+      <button class="btn btn-ghost" onclick="closeFallback()">关闭</button>
+      <button class="btn btn-primary" onclick="copyFallback()">📋 复制全部内容</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ====== 云服务客户端（配置来自 WorkBuddy publicConfig）====== */
+const cloud = WorkBuddyCloud.createWorkBuddyCloud({
+  endpoint: 'https://invoice-assistant-00577.app.workbuddy.host',
+  oauthRelayBaseUrl: 'https://www.workbuddy.cn/v2/as/genie-baas/oauth',
+  publishableKey: 'wbpk_Zr1ODiLS8CBN6nxtqYpldB_WnOiOkuWlalRqGu0g4Y62aCGFKSA3A5w',
+});
+const TABLE = 'invoice_customers';
+const LS_KEY = 'invoice_assistant_customers_v1'; // 仅用于旧版本本地数据迁移
+
+let customers = [];
+let editingId = null;
+let currentId = null;
+
+/* ---------- 基础 ---------- */
+function updateCount() { document.getElementById('totalCount').textContent = customers.length; }
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._timer); t._timer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+function setCloudBadge(ok) {
+  const b = document.getElementById('cloudBadge');
+  b.classList.toggle('off', !ok);
+  b.textContent = ok ? '☁ 云端已连接' : '☁ 云端连接失败';
+}
+function rowToCustomer(r) {
+  return {
+    id: r.id, name: r.name, shortName: r.short_name || '', taxNo: r.tax_no || '',
+    address: r.address || '', phone: r.phone || '', bank: r.bank || '',
+    account: r.account || '', remark: r.remark || '',
+  };
+}
+function customerToRow(c) {
+  return {
+    name: c.name, short_name: c.shortName || null, tax_no: c.taxNo || null,
+    address: c.address || null, phone: c.phone || null, bank: c.bank || null,
+    account: c.account || null, remark: c.remark || null,
+  };
+}
+
+/* ---------- 云端读写 ---------- */
+async function loadCustomers(silent) {
+  if (!silent) toast('正在从云端加载资料…');
+  const { data, error } = await cloud.database.from(TABLE)
+    .select('*').order('created_at', { ascending: false });
+  if (error) {
+    setCloudBadge(false);
+    toast('云端加载失败：' + error.message);
+    return;
+  }
+  setCloudBadge(true);
+  customers = (data || []).map(rowToCustomer);
+  updateCount(); renderLibrary();
+  if (currentId) {
+    const c = customers.find(x => x.id === currentId);
+    if (c) { document.getElementById('customerInfo').innerHTML = renderInfo(c); }
+    else { currentId = null; document.getElementById('customerInfo').innerHTML = '';
+      document.getElementById('applyCard').style.display = 'none';
+      document.getElementById('calcCard').style.display = 'none';
+      document.getElementById('customerSearch').value = ''; }
+  }
+}
+async function refreshData(btn) {
+  btn.disabled = true;
+  await loadCustomers(true);
+  btn.disabled = false;
+  toast('已刷新，共 ' + customers.length + ' 家');
+}
+async function dbInsert(row) {
+  const { data, error } = await cloud.database.from(TABLE).insert(row).select();
+  if (error) throw error;
+  return rowToCustomer(data[0]);
+}
+async function dbUpdate(id, row) {
+  row.updated_at = new Date().toISOString();
+  const { data, error } = await cloud.database.from(TABLE).update(row).eq('id', id).select();
+  if (error) throw error;
+  if (!Array.isArray(data) || data.length === 0) throw new Error('记录不存在或已被删除');
+  return rowToCustomer(data[0]);
+}
+async function dbDelete(id) {
+  const { data, error } = await cloud.database.from(TABLE).delete().eq('id', id).select();
+  if (error) throw error;
+  if (!Array.isArray(data) || data.length === 0) throw new Error('记录不存在或已被删除');
+}
+
+/* ---------- 旧数据迁移 ---------- */
+async function migrateLocalData() {
+  const old = JSON.parse(localStorage.getItem(LS_KEY) || '[]');
+  if (!old.length) return;
+  if (!confirm(`检测到本机浏览器中有 ${old.length} 条旧版本地数据，是否上传到云端资料库？（上传后本机数据将清除）`)) return;
+  try {
+    await cloud.database.from(TABLE).insert(old.map(customerToRow));
+    localStorage.removeItem(LS_KEY);
+    await loadCustomers(true);
+    toast('已成功上传 ' + old.length + ' 条旧数据到云端');
+  } catch (e) {
+    toast('迁移失败：' + e.message);
+  }
+}
+
+/* ---------- 标签页 ---------- */
+document.querySelectorAll('.tabs button').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    ['invoice', 'library', 'import'].forEach(tab => {
+      document.getElementById('tab-' + tab).style.display = tab === btn.dataset.tab ? '' : 'none';
+    });
+    if (btn.dataset.tab === 'library') renderLibrary();
+  };
+});
+
+/* ---------- 客户搜索 ---------- */
+const searchInput = document.getElementById('customerSearch');
+const searchResults = document.getElementById('searchResults');
+searchInput.addEventListener('input', () => {
+  const kw = searchInput.value.trim().toLowerCase();
+  if (!kw) { searchResults.classList.remove('show'); return; }
+  const hits = customers.filter(c =>
+    [c.name, c.shortName, c.taxNo].some(v => (v || '').toLowerCase().includes(kw))
+  ).slice(0, 12);
+  searchResults.innerHTML = hits.length
+    ? hits.map(c => `<div class="item" onclick="pickCustomer(${c.id})">
+        <div class="name">${esc(c.name)}</div>
+        <div class="sub">${esc(c.shortName || '—')} · 税号 ${esc(c.taxNo || '—')}</div>
+      </div>`).join('')
+    : `<div class="item" style="cursor:default;color:var(--muted)">未找到匹配客户，可到「客户资料库」新增</div>`;
+  searchResults.classList.add('show');
+});
+document.addEventListener('click', e => {
+  if (!e.target.closest('.search-wrap')) searchResults.classList.remove('show');
+});
+
+function pickCustomer(id) {
+  const c = customers.find(x => x.id === id);
+  if (!c) return;
+  currentId = id;
+  searchInput.value = c.name;
+  searchResults.classList.remove('show');
+  document.getElementById('customerInfo').innerHTML = renderInfo(c);
+  document.getElementById('applyCard').style.display = '';
+  document.getElementById('calcCard').style.display = '';
+  document.getElementById('f_name').value = c.name || '';
+  document.getElementById('f_taxNo').value = c.taxNo || '';
+  document.getElementById('f_addressPhone').value = [c.address, c.phone].filter(Boolean).join(' ');
+  document.getElementById('f_bank').value = c.bank || '';
+  document.getElementById('f_account').value = c.account || '';
+  document.getElementById('f_remark').value = c.remark || '';
+  buildPreview();
+}
+['f_name','f_taxNo','f_addressPhone','f_bank','f_account','f_remark'].forEach(id => {
+  document.getElementById(id).addEventListener('input', buildPreview);
+});
+function buildPreview() {
+  const g = id => document.getElementById(id).value.trim();
+  const lines = [
+    '【开票资料】',
+    '客户名称：' + g('f_name'),
+    '纳税人识别号：' + g('f_taxNo'),
+    '地址电话：' + g('f_addressPhone'),
+    '开户银行：' + g('f_bank'),
+    '银行账号：' + g('f_account'),
+    '开票内容：' + g('f_remark'),
+  ];
+  document.getElementById('copyPreview').value = lines.join('\n');
+}
+function renderInfo(c) {
+  const item = (k, v, cls = '') => `<div class="info-item ${cls}">
+    <div class="k"><span>${k}</span>${v ? `<span class="copy" onclick="copyText('${esc(v).replace(/'/g, "\\'")}')">复制</span>` : ''}</div>
+    <div class="v">${esc(v || '—')}</div></div>`;
+  return `<div class="info-grid">
+    ${item('客户名称', c.name, 'full')}
+    ${item('纳税人识别号', c.taxNo)}
+    ${item('地址', c.address)}
+    ${item('开户银行', c.bank)}
+    ${item('银行账号', c.account)}
+    ${item('电话', c.phone)}
+    ${item('备注', c.remark)}
+  </div>`;
+}
+
+/* ---------- 金额速算 ---------- */
+function calcTax() {
+  const amt = parseFloat(document.getElementById('calcAmount').value);
+  const rate = parseFloat(document.getElementById('calcRate').value);
+  const mode = document.getElementById('calcMode').value;
+  const fmt = n => isNaN(n) ? '—' : n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  if (isNaN(amt) || amt <= 0) {
+    document.getElementById('rOut').textContent = document.getElementById('rTax').textContent = document.getElementById('rTotal').textContent = '—';
+    return;
+  }
+  let out, tax;
+  if (mode === 'in') { out = amt / (1 + rate); tax = amt - out; }
+  else { out = amt; tax = out * rate; }
+  document.getElementById('rOut').textContent = fmt(out);
+  document.getElementById('rTax').textContent = fmt(tax);
+  document.getElementById('rTotal').textContent = fmt(out + tax);
+}
+
+/* ---------- 资料库 ---------- */
+function renderLibrary() {
+  const kw = document.getElementById('libSearch').value.trim().toLowerCase();
+  const rows = customers.filter(c =>
+    !kw || [c.name, c.shortName, c.taxNo, c.bank].some(v => (v || '').toLowerCase().includes(kw))
+  );
+  document.getElementById('libEmpty').style.display = rows.length ? 'none' : '';
+  document.getElementById('libBody').innerHTML = rows.map(c => `<tr>
+    <td>${esc(c.name)}</td><td>${esc(c.shortName || '—')}</td>
+    <td>${esc(c.taxNo || '—')}</td><td>${esc(c.bank || '—')}</td>
+    <td>${esc(c.account || '—')}</td><td>${esc([c.address, c.phone].filter(Boolean).join(' ') || '—')}</td>
+    <td class="actions">
+      <button class="edit" onclick="openEditor(${c.id})">编辑</button>
+      <button class="del" onclick="removeCustomer(${c.id})">删除</button>
+    </td>
+  </tr>`).join('');
+}
+async function removeCustomer(id) {
+  const c = customers.find(x => x.id === id);
+  if (!confirm(`确定删除客户「${c.name}」的开票资料吗？`)) return;
+  try {
+    await dbDelete(id);
+    toast('已删除');
+    await loadCustomers(true);
+  } catch (e) {
+    toast('删除失败：' + e.message);
+  }
+}
+
+/* ---------- 编辑弹窗 ---------- */
+function openEditor(id) {
+  editingId = id || null;
+  document.getElementById('editTitle').textContent = id ? '编辑客户' : '新增客户';
+  const c = customers.find(x => x.id === id) || {};
+  ['name','shortName','taxNo','phone','address','bank','account','remark'].forEach(k => {
+    document.getElementById('e_' + k).value = c[k] || '';
+  });
+  document.getElementById('editModal').classList.add('show');
+  document.getElementById('e_name').focus();
+}
+function closeEditor() { document.getElementById('editModal').classList.remove('show'); }
+document.getElementById('editModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeEditor();
+});
+document.getElementById('fallbackModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeFallback();
+});
+async function saveEditor() {
+  const name = document.getElementById('e_name').value.trim();
+  if (!name) { toast('请填写客户名称'); return; }
+  const data = { name };
+  ['shortName','taxNo','phone','address','bank','account','remark'].forEach(k => {
+    data[k] = document.getElementById('e_' + k).value.trim();
+  });
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true;
+  try {
+    if (editingId) await dbUpdate(editingId, customerToRow(data));
+    else await dbInsert(customerToRow(data));
+    closeEditor();
+    await loadCustomers(true);
+    toast('已保存到云端');
+  } catch (e) {
+    toast('保存失败：' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ---------- 导入 / 导出 ---------- */
+function parseLine(line) {
+  if (line.includes('\t')) return line.split('\t');
+  return line.split(',').map(s => s.trim());
+}
+async function doImport(btn) {
+  const text = document.getElementById('importArea').value.trim();
+  if (!text) { toast('请先粘贴数据'); return; }
+  const toInsert = [];
+  let updated = 0;
+  text.split(/\r?\n/).forEach(line => {
+    line = line.trim();
+    if (!line) return;
+    const cols = parseLine(line);
+    const [name, shortName, taxNo, address, phone, bank, account, remark] = cols;
+    if (!name || /客户名称|简称/.test(name)) return; // 跳过表头
+    const exist = customers.find(c => c.name === name || (taxNo && c.taxNo && c.taxNo === taxNo));
+    if (exist) {
+      updated++;
+      dbUpdate(exist.id, customerToRow({ name, shortName, taxNo, address, phone, bank, account, remark }))
+        .catch(e => toast(`更新「${name}」失败：` + e.message));
+    } else {
+      toInsert.push(customerToRow({ name, shortName, taxNo, address, phone, bank, account, remark }));
+    }
+  });
+  if (!toInsert.length && !updated) { toast('没有可导入的数据'); return; }
+  btn.disabled = true;
+  try {
+    if (toInsert.length) await cloud.database.from(TABLE).insert(toInsert);
+    await loadCustomers(true);
+    document.getElementById('importArea').value = '';
+    toast(`导入完成：新增 ${toInsert.length} 家，更新 ${updated} 家`);
+  } catch (e) {
+    toast('导入失败：' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+async function fetchFromApi() {
+  const url = document.getElementById('apiUrl').value.trim();
+  if (!url) { toast('请填写接口地址'); return; }
+  toast('正在请求公司系统…');
+  try {
+    const list = await (await fetch(url)).json();
+    if (!Array.isArray(list)) throw new Error('返回格式不是 JSON 数组');
+    const toInsert = [];
+    let updated = 0;
+    list.forEach(c => {
+      if (!c || !c.name) return;
+      const row = customerToRow({
+        name: c.name, shortName: c.shortName, taxNo: c.taxNo, address: c.address,
+        phone: c.phone, bank: c.bank, account: c.account, remark: c.remark,
+      });
+      const exist = customers.find(x => x.name === c.name || (c.taxNo && x.taxNo && x.taxNo === c.taxNo));
+      if (exist) { updated++; dbUpdate(exist.id, row).catch(e => toast('更新失败：' + e.message)); }
+      else toInsert.push(row);
+    });
+    if (toInsert.length) await cloud.database.from(TABLE).insert(toInsert);
+    await loadCustomers(true);
+    toast(`同步完成：新增 ${toInsert.length} 家，更新 ${updated} 家`);
+  } catch (e) {
+    toast('拉取失败：' + e.message + '（需公司系统支持跨域访问）');
+  }
+}
+function exportCSV() {
+  const head = '客户名称,简称,税号,地址,电话,开户银行,银行账号,备注';
+  const rows = customers.map(c => [c.name, c.shortName, c.taxNo, c.address, c.phone, c.bank, c.account, c.remark]
+    .map(v => `"${(v || '').toString().replace(/"/g, '""')}"`).join(','));
+  downloadText('\uFEFF' + head + '\n' + rows.join('\n'), `客户开票资料_${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8');
+}
+function downloadTemplate() {
+  const head = '客户名称,简称,税号,地址,电话,开户银行,银行账号,备注';
+  const demo = '深圳市示例科技有限公司,示例科技,91440300MA5XXXXXXX,深圳市南山区科技园XX路XX号,0755-12345678,招商银行深圳科技园支行,755912345610801,项目客户';
+  downloadText('\uFEFF' + head + '\n' + demo + '\n', '开票资料导入模板.csv', 'text/csv;charset=utf-8');
+}
+function exportApplyTxt() {
+  const name = document.getElementById('f_name').value.trim() || '客户';
+  downloadText(document.getElementById('copyPreview').value, `开票申请单_${name}.txt`, 'text/plain;charset=utf-8');
+}
+
+/* 下载（内嵌预览环境可能被浏览器拦截，因此提供复制兜底） */
+function downloadText(content, filename, mime) {
+  let ok = true;
+  try {
+    const blob = new Blob([content], { type: mime || 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1500);
+  } catch (e) {
+    ok = false;
+  }
+  const inFrame = window.self !== window.top; // 嵌入预览时自动下载常被拦截
+  if (!ok || inFrame) showDownloadFallback(content, filename, ok);
+}
+function showDownloadFallback(content, filename, tried) {
+  document.getElementById('fbTitle').textContent = '获取文件：' + filename;
+  document.getElementById('fbTip').textContent = tried
+    ? '如浏览器已自动下载，可忽略本窗口。若未下载，请复制下方内容粘贴到 Excel（CSV 可直接用 Excel 打开）。'
+    : '当前环境不支持自动下载，请复制下方内容粘贴到 Excel（CSV 可直接用 Excel 打开）。';
+  document.getElementById('fbText').value = content;
+  document.getElementById('fallbackModal').classList.add('show');
+}
+function closeFallback() { document.getElementById('fallbackModal').classList.remove('show'); }
+function copyFallback() { copyText(document.getElementById('fbText').value); }
+
+/* ---------- 复制 ---------- */
+function copyText(text) {
+  navigator.clipboard.writeText(text).then(() => toast('已复制'))
+    .catch(() => { const ta = document.createElement('textarea'); ta.value = text;
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+      document.body.removeChild(ta); toast('已复制'); });
+}
+function copyInvoiceText() { copyText(document.getElementById('copyPreview').value); }
+
+function esc(s) {
+  return (s || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/* ---------- 启动 ---------- */
+updateCount();
+renderLibrary();
+loadCustomers().then(migrateLocalData);
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "_说明": "企业微信扫码登录配置模板。复制成 wecom_config.json 后填入真实值。",
+  "_怎么用": "cp wecom_config.example.json wecom_config.json 后填写；或直接跑 deploy/deploy.sh，它会自动生成 wecom_config.json（含正确权限 600）。",
+  "_热重载": "改这个文件保存即生效，不用重启服务。",
+  "corp_id": "",
+  "agent_id": "",
+  "secret": "",
+  "_base_url说明": "本服务的对外访问地址（用户浏览器实际打开的地址），必须是 https。正式部署填 https://aitoolbox.maihaoche.com",
+  "base_url": "",
+  "_redirect说明": "上报给企微的 redirect_uri。留空则自动取 {base_url}/api/login/wecom/callback。",
+  "redirect": "",
+  "_admin_userids说明": "管理员白名单：把你的企微 userid 填进来（可多个）。这些 userid 扫码登录后自动拥有本系统「管理员」权限。不填则扫码进来只能是普通用户。",
+  "admin_userids": []
+}

@@ -1,0 +1,11 @@
+# AI 成果库 · 轻量后端
+#
+# 本项目只使用 Python 3 标准库（http.server + sqlite3 + json + mimetypes …），
+# 不需要任何第三方包，因此没有需要 pip install 的内容。
+#
+# 运维提示：直接 `python3 server.py` 即可运行，无需虚拟环境、无需 pip。
+#
+# 若将来要加第三方依赖，在本文件按标准格式写，然后：
+#     pip install -r requirements.txt
+#
+# 当前为空（保留此文件是为了说明依赖策略，避免运维误以为漏了安装步骤）。
