@@ -561,8 +561,18 @@ def wecom_diagnose():
             "把你自己的企微 userid 填进 wecom_config.json 的 admin_userids 数组"
             "（可写多个），保存即生效，不用重启服务")
 
-    # 汇总「还差哪几项」——运维照着做即可，不必回头找人
-    out["todo"] = [i["action"] for i in out["items"] if not i.get("ok") and i.get("action")]
+    # 汇总「还差哪几项」——运维照着做即可，不必回头找人。
+    # 分两类：
+    #   todo       = 要去**企微后台**点一下的（改完立即生效）
+    #   todo_local = 改**本机配置文件 / 服务器**的（同样立即生效，不用碰企微后台）
+    # 分开列，免得运维以为「管理员白名单」也要去企微后台里找。
+    BACKEND_KEYS = ("credentials", "callback_domain", "trusted_ip", "trusted_ip_match")
+    out["todo"] = [i["action"] for i in out["items"]
+                    if not i.get("ok") and i.get("action")
+                    and i.get("key") in BACKEND_KEYS]
+    out["todo_local"] = [i["action"] for i in out["items"]
+                         if not i.get("ok") and i.get("action")
+                         and i.get("key") not in BACKEND_KEYS]
     out["ready"] = all(i.get("ok") for i in out["items"] if i.get("key") in
                         ("credentials", "callback_domain", "trusted_ip"))
     return out

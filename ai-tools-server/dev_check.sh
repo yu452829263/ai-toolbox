@@ -112,17 +112,25 @@ for it in d.get("items") or []:
 todo = d.get("todo") or []
 if todo:
     print()
-    print("  还要做的事（不用重新部署，改完即生效）：")
+    print("  还要去企微后台改的（改完立即生效，不用重新部署）：")
     for i, t in enumerate(todo, 1):
         print("   %d) %s" % (i, t))
+todo_local = d.get("todo_local") or []
+if todo_local:
+    print()
+    print("  还要在服务器/配置上改的（改完立即生效，不用重新部署）：")
+    for i, t in enumerate(todo_local, 1):
+        print("   %d) %s" % (i, t))
 '
-  if echo "$DIAG" | python3 -c '
+  # 逐项计数：每一条体检项各算一项（不要合并成一条，否则「5 项全红」只显示「失败 1 项」）
+  CNT=$(echo "$DIAG" | python3 -c '
 import json,sys
 d=json.load(sys.stdin).get("data") or {}
-keys=("credentials","callback_domain","trusted_ip","trusted_ip_match")
-rel=[i for i in (d.get("items") or []) if i.get("key") in keys]
-sys.exit(0 if rel and all(i.get("ok") for i in rel) else 1)
-' 2>/dev/null; then ok=$((ok+1)); else fail=$((fail+1)); fi
+items=d.get("items") or []
+print("%d %d" % (sum(1 for i in items if i.get("ok")), sum(1 for i in items if not i.get("ok"))))
+' 2>/dev/null || echo "0 0")
+  ok=$((ok + $(echo "$CNT" | cut -d" " -f1)))
+  fail=$((fail + $(echo "$CNT" | cut -d" " -f2)))
 fi
 echo
 
