@@ -116,7 +116,7 @@ curl http://127.0.0.1:8080/api/health
 │   │   ├── nginx.conf.example    nginx 反代示例
 │   │   ├── ai-tools.service      systemd 常驻服务示例
 │   │   └── docker/               容器化三个文件（Dockerfile / compose / 说明）
-│   ├── tests/                   回归测试（3 个 Python 零依赖 + 3 个 Node 需 puppeteer）
+│   ├── tests/                   回归测试（4 个 Python 零依赖 + 3 个 Node 需 puppeteer）
 │   ├── wecom_config.example.json 企微配置模板（复制成 wecom_config.json 填值）
 │   ├── accounts_preset.example.json 预置账号模板
 │   ├── dev_check.sh              一键体检（部署完在服务器上跑）
@@ -232,16 +232,29 @@ docker run -d --name ai-tools --restart unless-stopped \
 # 本地跑（零依赖）
 cd ai-tools-server && PORT=8080 python3 server.py
 
-# 跑回归测试（Python 三个零依赖）
+# 跑回归测试（Python 四个零依赖）
 python3 ai-tools-server/tests/test_wecom_qr.py        # 企微二维码链路
 python3 ai-tools-server/tests/test_wecom_login.py      # 企微登录链路
 python3 ai-tools-server/tests/test_admin_whitelist.py  # 管理员白名单
+python3 ai-tools-server/tests/test_trusted_ip.py       # 可信 IP 自动核对（离线，不打企微接口）
 
-# 前端 UI 测试（需 puppeteer：npm i -D puppeteer，或设 PUPPETEER_PATH）
+# 前端 UI 测试（需 puppeteer：npm i -D puppeteer，或设 PUPPETEER_PATH 指向安装目录）
+# 这三个都要先起服务：cd ai-tools-server && PORT=8080 python3 server.py
 node ai-tools-server/tests/test_login_ui.js           http://127.0.0.1:8080
 node ai-tools-server/tests/test_upload_login_gate.js  http://127.0.0.1:8080
 node ai-tools-server/tests/test_upload_real_login.js  http://127.0.0.1:8080 guest 'guest@2026'
 ```
+
+> ⚠️ `test_upload_real_login.js` 登录的是**真实数据库里的账号**。密码不在 git 里（`accounts_preset.json` 是 gitignore 文件），
+> 所以**新建的 clone 必须先建预置账号再跑这个测试**，否则会报「用户名或密码错误」：
+>
+> ```bash
+> cp ai-tools-server/accounts_preset.example.json ai-tools-server/accounts_preset.json
+> # 编辑它，把 password 改成你要用的密码（guest 账号的密码要与测试命令行传的密码一致）
+> cd ai-tools-server && PORT=8080 python3 server.py   # 首次启动自动导入预置账号
+> ```
+>
+> 前两个前端测试不涉及账号，clone 完直接可跑。
 
 改完重新打包：
 
