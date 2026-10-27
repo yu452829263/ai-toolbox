@@ -116,6 +116,59 @@ def verify(zip_path):
     return bad_flag, mismatch
 
 
+def verify_dockerfile_copies(zip_path):
+    """校验 Dockerfile 里每条 COPY 的源文件/目录是否真的在包里。
+
+    ★ 为什么必须查：
+        `wecom_config.json` / `accounts_preset.json` 含密钥和密码，被 EXCLUDE_FILES
+        排除在包外；而 Dockerfile 若写了 `COPY wecom_config.json /app/`，
+        `docker build` 会直接失败（COPY 源不存在）—— 运维拿到包才发现，一来一回
+        就是一天。曾在 2026-10-27 真实踩到，已改为只 COPY .example 模板。
+
+    规则：源是文件 → 包里必须有同名条目；源是目录（以 / 结尾）→ 包里至少有
+    一个条目以它为前缀。
+    """
+    zp = os.path.join(BASE, zip_path)
+    missing = []
+    with zipfile.ZipFile(zp) as z:
+        names = z.namelist()
+        try:
+            raw = z.read("Dockerfile").decode("utf-8")
+        except KeyError:
+            return ["包里没有 Dockerfile，无法校验 COPY"]
+    # 合并续行、去掉注释行
+    lines, buf = [], ""
+    for ln in raw.splitlines():
+        s = ln.strip()
+        if not buf and (not s or s.startswith("#")):
+            continue
+        buf += s
+        if buf.endswith("\\"):
+            buf = buf[:-1].rstrip()
+            continue
+        lines.append(buf)
+        buf = ""
+    if buf:
+        lines.append(buf)
+    for ln in lines:
+        if not ln.upper().startswith("COPY"):
+            continue
+        parts = ln.split()[1:]
+        # 去掉 --from= / --chown= 这类 flag
+        parts = [p for p in parts if not p.startswith("--")]
+        if len(parts) < 2:
+            continue
+        srcs = parts[:-1]          # 最后一个是目标
+        for src in srcs:
+            if src.startswith("--from="):
+                continue
+            s = src.rstrip("/")
+            hit = any(n == s or n == s + "/" or n.startswith(s + "/") for n in names)
+            if not hit:
+                missing.append("Dockerfile COPY 的源不在包里：%s" % src)
+    return missing
+
+
 def build_docker_package():
     """用 server 包 + 容器专属文件现场合成 docker 包内容（不落盘中间目录）。"""
     items = collect(os.path.join(BASE, SRC_DIR), BASE)
@@ -136,7 +189,7 @@ def build_docker_package():
     return docker_items
 
 
-def report(zip_path, count):
+def report(zip_path, count, check_dockerfile=False):
     size = os.path.getsize(os.path.join(BASE, zip_path))
     bad_flag, mismatch = verify(zip_path)
     print("%-24s %5d 个文件  %6.1f KB" % (zip_path, count, size / 1024.0))
@@ -147,6 +200,14 @@ def report(zip_path, count):
     if mismatch:
         ok = False
         print("   ★ 解压后文件缺失：", mismatch)
+    if check_dockerfile:
+        miss = verify_dockerfile_copies(zip_path)
+        if miss:
+            ok = False
+            for m in miss:
+                print("   ★ " + m)
+        else:
+            print("   Dockerfile 的 COPY 源全部在包内")
     # 抽一个中文名做实际读取校验
     with zipfile.ZipFile(os.path.join(BASE, zip_path)) as z:
         cn = [n for n in z.namelist() if "/" in n and any(ord(c) > 127 for c in n)]
@@ -173,7 +234,7 @@ if docker_files is None:
     ok = False
 else:
     build_zip(docker_files, DOCKER_ZIP)
-    if not report(DOCKER_ZIP, len(docker_files)):
+    if not report(DOCKER_ZIP, len(docker_files), check_dockerfile=True):
         ok = False
 
 print("\n%s" % ("全部通过" if ok else "★ 有问题"))

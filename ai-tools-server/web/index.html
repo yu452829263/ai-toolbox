@@ -3545,7 +3545,7 @@ async function loadToolsFromApi(){
        只有接口连不上（catch）才回退演示数据，保证后端临时故障时页面不至于空白。 */
     TOOLS.splice(0, TOOLS.length, ...items.map(t => Object.assign({}, t, { liked:false, saved: !!t.saved })));
     /* 各渲染块彼此隔离：任何一个抛错都不能阻断后面的（尤其 renderOverview ——
-       它一断，统计条就会停在演示态的旧值上，比如库里已清空却还显示 28）。 */
+       它一断，统计条就会停在演示态的旧值上，比如库里已清空却还显示旧的工具数）。 */
     [renderChips, renderTools, renderRank, renderNew, renderOverview, renderFeed, animateOverview]
       .forEach(fn=>{ try{ fn(); }catch(err){ console.warn('渲染失败（已跳过）：', fn.name, err && err.message); } });
     return true;

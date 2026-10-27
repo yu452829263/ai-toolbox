@@ -275,7 +275,8 @@ python3 build_zip.py    # 生成 ai-tools-server.zip / ai-tools-docker.zip
 `sudo journalctl -u ai-tools | grep -A2 管理员`。若 `accounts_preset.json` 存在则用预设账号，否则自动生成随机密码并打印在日志里。
 
 **Q：怎么把网站里已有的工具清空重来？**
-`python3 ai-tools-server/server.py --clear`（会打上标记，重启不会又灌回来）。想恢复演示数据用 `--reseed`。
+`python3 ai-tools-server/server.py --reseed`（重置回出厂的 9 个真实工具）。
+⚠️ **别用 `--clear`**：它会清空工具表并打上「不再自动导入种子」的标记，重启也不会灌回来，站点会一直是空的。
 
 **Q：改前端页面？**
 前端是单文件 `ai-tools-server/web/index.html`，图片已内联，**不需要构建**。改完覆盖服务器上的同名文件，重启服务即可。

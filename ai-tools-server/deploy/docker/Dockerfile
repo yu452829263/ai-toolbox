@@ -11,17 +11,18 @@ WORKDIR /app
 COPY server.py /app/
 COPY web/ /app/web/
 COPY requirements.txt /app/
-COPY accounts_preset.json /app/
 
 # 真实工具数据：seed 是 9 个真实工具的元数据，tools/ 是它们的原件。
 # 少了这两行，容器里工具库会是空的、附件也下载不到。
 COPY seed/ /app/seed/
 COPY tools/ /app/tools/
 
-# 企微扫码登录配置（corp_id / secret / admin_userids 等）。
-# 镜像内先放一份空模板；正式部署建议用 volume 挂载覆盖，
-# 这样改配置不用重新 build 镜像。
-COPY wecom_config.json /app/
+# ⚠️ 企微配置（含 corp_id / secret / admin_userids）与预置账号（含默认密码）
+#    **故意不进交付包**（防密钥泄漏），所以这里只放模板，不能 COPY 真文件
+#    ——COPY 一个不存在的文件会让 docker build 直接失败。
+#    正式部署：在服务器上 cp 模板改好，再 volume 挂载覆盖（见 README-Docker.md）。
+COPY wecom_config.example.json /app/wecom_config.example.json
+COPY accounts_preset.example.json /app/accounts_preset.example.json
 
 RUN mkdir -p /app/data/uploads
 

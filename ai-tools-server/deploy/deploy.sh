@@ -235,8 +235,11 @@ cat <<EOF
 3. 打开 https://$DOMAIN → 登录页应出现可点击的「使用企业微信扫码登录」
 4. 手机企业微信扫描二维码完成登录
 5. 首次登录会自动建号：用户名 wecom_<userid>，姓名/部门从企微通讯录同步
-6. 如需清掉 28 条演示占位数据：systemctl stop $SERVICE && cd $APP_DIR && \\
-     python3 server.py --clear && systemctl start $SERVICE
+6. 想把工具库重置回出厂的 9 个真实工具（会清空所有人上传的工具和计数）：
+   systemctl stop $SERVICE && cd $APP_DIR && \\
+     python3 server.py --reseed && systemctl start $SERVICE
+   ⚠️ 不要用 --clear：它会清空工具表并打上「不再自动导入种子」的标记，
+      重启也不会灌回来，站点会一直是空的。除非你确定要一个完全空库。
 7. 实时日志：journalctl -u $SERVICE -f
 
 ★ 如果扫码仍不通：改上面两项后台设置即可生效，**不用重新部署**；

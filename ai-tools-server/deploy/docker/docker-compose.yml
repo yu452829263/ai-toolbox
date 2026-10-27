@@ -8,6 +8,8 @@ services:
       - "8080:8080"
     volumes:
       - /data/ai-tools:/app/data
-      # 企微配置：挂载覆盖镜像内的空模板，改配置不用重新 build 镜像。
-      # （文件不存在时 docker 会建目录，所以先 touch 一个再启动）
+      # 企微配置：挂载覆盖镜像内的模板，改配置不用重新 build 镜像。
+      # ⚠️ 启动前必须先准备好这个文件，否则 docker 会把它创建成目录，
+      #    容器里拿到一个空目录 → 企微配置读不到（扫码登录会灰掉）。
+      #    cp wecom_config.example.json wecom_config.json && 填值
       - ./wecom_config.json:/app/wecom_config.json:ro
