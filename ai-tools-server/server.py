@@ -2304,7 +2304,7 @@ def main():
     clear = "--clear" in sys.argv
     if "--help" in sys.argv or "-h" in sys.argv:
         print("命令行参数：")
-        print("  --reseed   清空工具表并按 seed/seed_tools.json 重新导入种子数据（重置回 9 个真实工具）")
+        print("  --reseed   清空工具表并按 seed/seed_tools.json 重新导入种子数据（当前种子为空，即重置成空站点）")
         print("  --clear    清空工具表且【不】导入种子数据（会永久禁用自动导入，站点一直是空的；一般用 --reseed 就够）")
         return
     n = init_db(reseed=reseed, clear=clear)

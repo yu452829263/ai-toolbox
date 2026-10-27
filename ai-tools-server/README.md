@@ -37,7 +37,7 @@ ai-tools-server/
 ├── web/
 │   └── index.html         前端页面（单文件自包含，图片已内联）
 ├── seed/
-│   └── seed_tools.json    9 个真实工具的初始数据（首次启动自动导入；上线前用 --clear 清掉）
+│   └── seed_tools.json    初始数据（默认留空；工具由运维在后台手动上传）
 ├── tests/                 回归测试
 │   ├── test_wecom_qr.py         企微二维码链路（零依赖）
 │   ├── test_wecom_login.py       企微登录链路（零依赖）
@@ -56,16 +56,8 @@ ai-tools-server/
 │   └── docker/            容器化三个文件（Dockerfile / compose / 说明）
 ├── wecom_config.example.json      企微配置模板（复制成 wecom_config.json 填值）
 ├── accounts_preset.example.json  预置账号模板（可选）
-└── tools/                 ★ 随包分发的真实工具原件（只读，走 /tools/xxx 下载）
-    ├── macOS日历助手-ical-cli.zip
-    ├── 滴答清单助手-dida-cli.zip
-    ├── 头脑风暴助手-johari.zip
-    ├── 广告法合规检查.zip
-    ├── 会议纪要速记-企微七段式.zip
-    ├── 金融订单播报-分发模型.png
-    ├── 开票资料助手.html
-    ├── 合同初审机器人-使用说明.md
-    └── 薪资计算机器人-使用说明.md
+└── tools/                 ★ 随包分发的工具原件（只读，走 /tools/xxx 下载）
+    └── （默认留空：工具原件由运维在后台手动上传时放入）
 ```
 
 > ⚠️ `wecom_config.json`（含企微 Secret）与 `accounts_preset.json`（含默认密码）
@@ -87,7 +79,7 @@ PORT=8080 python3 server.py
 AI 成果库 · 轻量后端已启动
   监听地址   : http://0.0.0.0:8080
   数据目录   : .../ai-tools-server/data
-  数据库     : .../ai-tools-server/data/tools.db（9 个真实工具）
+  数据库     : .../ai-tools-server/data/tools.db（0 个工具，出厂为空）
   附件上限   : 50 MB/文件
   健康检查   : http://0.0.0.0:8080/api/health
 ==============================================================
@@ -95,7 +87,7 @@ AI 成果库 · 轻量后端已启动
 
 然后浏览器打开 **http://服务器IP:8080** 就能用。
 
-**首次启动会自动做两件事**：建库建表 + 导入 `seed/seed_tools.json` 里的 **9 个真实工具**（见 4.1 节）。
+**首次启动会自动做两件事**：建库建表 + 导入 `seed/seed_tools.json` 里的初始数据（当前为**空**，即上线后是一个空站点；工具由运维在后台手动上传，见 4.1 节）。
 
 **预置账号**：包根目录的 `accounts_preset.json` 会在首次启动（用户表为空时）自动导入两个账号——`admin`（管理员）和 `guest`（普通用户）。**上线后请尽快登录修改这两个默认密码**；修改后可删除该文件（数据已入库，删除不影响使用）。若想让服务重启时不再校验该文件，删除即可。
 
@@ -123,7 +115,7 @@ python3 server.py --reseed
 
 **管理操作全部留痕**：编辑、删除、恢复、改计数、账号操作都会记入操作日志（管理面板第三个页签可查）。
 
-**上线不需要清库**：种子数据已经是 9 个真实工具（见 4.1 节），不是演示占位数据。
+**上线不需要清库**：出厂就是空站点（种子为空），工具在后台手动上传（见 4.1 节）。
 要重置回出厂数据用 `python3 server.py --reseed`；**不要用 `--clear`**（它会清空工具表并永久禁用自动导入，站点会一直是空的）。
 
 ---
@@ -300,34 +292,40 @@ curl http://127.0.0.1:8080/api/login/wecom/status
 
 ---
 
-## 4.1 种子数据 = 9 个真实工具（2026-10-26 起）
+## 4.1 出厂为空站点，工具在后台手动上传（2026-10-27 起）
 
-`seed/seed_tools.json` 里现在是 **9 个真实工具**，不是编造的占位数据：
-macOS 日历助手、滴答清单助手、头脑风暴助手、开票资料助手、广告法合规检查、
-会议纪要速记、金融订单播报、合同初审机器人、薪资计算机器人。
+`seed/seed_tools.json` 现在是**空数组**，仓库里也不带任何工具原件。
+**上线后工具库是空的**，工具由运维在后台（登录后点「我要上传」）逐个上传。
 
-工具原件放在 `tools/` 目录（只读，随包分发），走 `/tools/<文件名>` 下载，
-不依赖 `data/` 目录 —— 重装、换机器都还在。
+这样做的原因：仓库要放公网，任何随包分发的工具原件都可能夹带敏感内容。
+出厂不带数据 = 公网上永远只有空壳页面。
 
-### 换成自己的工具
+### 上传工具的正常流程（运维日常）
+
+1. 登录站点（企微扫码，或管理员分发的账号密码）
+2. 点「我要上传」→ 填工具名称/部门/类型/描述 → 选附件 → 发布
+3. 发布后工具即时上架，`downloads`/`likes` 从 0 起算
+
+上传的附件存在 `data/uploads/`，**不依赖 `tools/` 目录，也不会进 git**。
+
+### 如果想让某个工具的原件也走 `/tools/<文件名>` 下载
+
+`tools/` 目录默认留空（目录保留、只有 `.gitkeep`）。想让工具附件从 `/tools/xxx` 下载时，
+把原件放进去即可：
 
 ```bash
-# 1. 把新工具文件放进 tools/
 cp 我的工具.zip /path/to/ai-tools-server/tools/
-
-# 2. 在 seed/seed_tools.json 里加一条（name/dept/type/desc/detail 必填）
-#    files[].url 写成 /tools/<文件名>
-
-# 3. 让数据库重新导入
-python3 server.py --reseed
 ```
 
-### 如果想让工具库从零开始（不要这 9 个真实工具）
+注意：`tools/` 是随包分发目录，**放进去的文件不会被 git 跟踪**（`.gitignore` 已忽略），
+重启/重装不丢，但换机器要重新放。
+
+### 重置工具库
 
 ```bash
 sudo systemctl stop ai-tools
 cd /path/to/ai-tools-server
-python3 server.py --clear        # 清空且不再自动导入
+python3 server.py --reseed       # 按 seed/seed_tools.json 重置（当前为空 → 重置成空站点）
 sudo systemctl start ai-tools
 ```
 
@@ -338,8 +336,9 @@ curl http://127.0.0.1:8080/api/health
 # → "tools": 0
 ```
 
-`--clear` 会打上「种子已处理」标记，**之后重启多少次都不会又冒出来**。
-想反悔、恢复这 9 个真实工具：`python3 server.py --reseed`。
+⚠️ **不要用 `--clear`**：它会清空工具表并**永久禁用**自动导入，
+站点一直空着且 `--reseed` 也不一定能救回来（只能改代码里的 meta 标记）。
+用 `--reseed` 即可。
 
 ### ⚠️ 前端也要是新版
 
@@ -510,7 +509,7 @@ curl http://127.0.0.1:8080/api/health
 | 页面打得开但上传 413 | 超过大小上限。调大 `MAX_UPLOAD_MB` + nginx `client_max_body_size` |
 | 页面打得开但数据一直是演示态 | 前端在 `file://` 下打开才会走演示态；用 `http://` 访问才会连后端 |
 | **库里 0 条但页面还有工具** | 前端是旧版。覆盖新版 `web/index.html` 后 Ctrl+F5 强刷 |
-| **想把工具库清空 | 用 `--reseed`（重置回 9 个真实工具）。⚠️ `--clear` 会清空工具表并**永久禁用**自动导入 → 站点一直空着，只能再跑 `--reseed` 恢复 |
+| **想把工具库清空 | 用 `--reseed`（当前种子为空，重置回空站点）。⚠️ `--clear` 会清空工具表并**永久禁用**自动导入 → 站点一直空着，只能再跑 `--reseed` 恢复 |
 | 附件下载 404 | 文件被手工从 `data/uploads/` 删了；或 URL 里的中文没做编码（服务端已兼容） |
 | 改了前端没生效 | 改的是 `web/index.html`；浏览器可能缓存了旧页面，Ctrl+F5 强刷 |
 

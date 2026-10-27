@@ -12,7 +12,7 @@ COPY server.py /app/
 COPY web/ /app/web/
 COPY requirements.txt /app/
 
-# 真实工具数据：seed 是 9 个真实工具的元数据，tools/ 是它们的原件。
+# 工具数据：seed 是初始数据（当前为空数组），tools/ 是工具原件目录（默认留空，后台上传时放入）。
 # 少了这两行，容器里工具库会是空的、附件也下载不到。
 COPY seed/ /app/seed/
 COPY tools/ /app/tools/

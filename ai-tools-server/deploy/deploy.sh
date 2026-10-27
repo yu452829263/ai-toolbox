@@ -235,7 +235,7 @@ cat <<EOF
 3. 打开 https://$DOMAIN → 登录页应出现可点击的「使用企业微信扫码登录」
 4. 手机企业微信扫描二维码完成登录
 5. 首次登录会自动建号：用户名 wecom_<userid>，姓名/部门从企微通讯录同步
-6. 想把工具库重置回出厂的 9 个真实工具（会清空所有人上传的工具和计数）：
+6. 想把工具库重置回出厂状态（当前出厂即空站点；会清空所有人上传的工具和计数）：
    systemctl stop $SERVICE && cd $APP_DIR && \\
      python3 server.py --reseed && systemctl start $SERVICE
    ⚠️ 不要用 --clear：它会清空工具表并打上「不再自动导入种子」的标记，

@@ -8,14 +8,14 @@
 | `docker-compose.yml` | 可选，用 compose 一键起 |
 | `server.py` | 后端服务（SQLite 自动建库，无需安装数据库） |
 | `web/index.html` | 前端页面（用这份替换服务器上原有的旧页面） |
-| `seed/seed_tools.json` | **9 个真实工具**的初始数据（容器首次启动自动导入） |
-| `tools/` | 9 个工具的原件（走 `/tools/<文件名>` 下载） |
+| `seed/seed_tools.json` | 初始数据（当前为**空**；容器首次启动自动导入 0 条） |
+| `tools/` | 工具原件目录（当前为空；后台上传的工具原件放这里，走 `/tools/<文件名>` 下载） |
 | `requirements.txt` | 依赖说明（空，仅标准库） |
 | `wecom_config.example.json` | 企微配置**模板**（真文件含密钥，不进包） |
 | `accounts_preset.example.json` | 预置账号**模板**（真文件含密码，不进包） |
 
-**镜像里带 9 个真实工具**：容器首次启动会自动建库并导入 `seed/seed_tools.json`（9 个真实工具），
-不是空库、也不是编造的占位数据。工具原件在 `tools/`，可正常下载。
+**镜像里是空站点**：容器首次启动会自动建库并导入 `seed/seed_tools.json`（当前为空数组），
+所以上线后工具库是空的 —— 工具由运维在后台手动上传，上传时把原件放进 `tools/` 即可通过 `/tools/<文件名>` 下载。
 
 **企微配置与预置账号要自己放**：这两个文件含密钥/密码，**故意不进包**（镜像里只有 `.example` 模板）。
 不配置也能起（企微登录按钮会灰掉，其他功能正常），要扫码登录就按下文挂载。
@@ -39,7 +39,7 @@ docker run -d --name ai-tools --restart unless-stopped \
 
 # 4. 验证
 curl http://127.0.0.1:8080/api/health
-# 看到 "tools": 9 即成功（9 个真实工具已导入）
+# 看到 "tools": 0 即成功（出厂为空站点，工具由运维在后台手动上传）
 ```
 
 ## 方式二：docker-compose
@@ -85,7 +85,7 @@ server {
 
 1. `docker ps` → ai-tools 状态 Up（healthy）
 2. `curl http://127.0.0.1:8080/api/health` → `"tools": 9`
-3. 浏览器打开首页 → 「已上传工具」为 9、列表有 9 个工具（记得 Ctrl+F5 强刷，别看缓存的旧页面）
+3. 浏览器打开首页 → 「已上传工具」为 0、列表为空，属正常（记得 Ctrl+F5 强刷，别看缓存的旧页面）
 4. 点一个工具的下载 → 能下到 zip/png → 完成
 
 ## 常用运维命令

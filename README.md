@@ -109,8 +109,8 @@ curl http://127.0.0.1:8080/api/health
 ├── ai-tools-server/              ★ 唯一源码目录，部署的就是它
 │   ├── server.py                 ★ 服务入口（唯一需要跑的文件）
 │   ├── web/index.html            前端页面（单文件自包含，图片已内联）
-│   ├── seed/seed_tools.json      9 个真实工具的初始数据（首次启动自动导入）
-│   ├── tools/                    ★ 随包分发的 9 个真实工具原件（走 /tools/xxx 下载）
+│   ├── seed/seed_tools.json      初始数据（默认留空；工具由运维后台上传）
+│   ├── tools/                    随包分发的工具原件目录（默认留空，后台上传时放这里）
 │   ├── deploy/
 │   │   ├── deploy.sh             一键部署脚本
 │   │   ├── nginx.conf.example    nginx 反代示例
@@ -212,7 +212,7 @@ tar czf ai-tools-backup-$(date +%F).tar.gz ai-tools-server/data/
 
 - **数据库**：SQLite 单文件 `data/tools.db`，不用装数据库服务
 - **上传附件**：`data/uploads/`
-- **随包工具原件**：`tools/`（只读，走 `/tools/<文件名>` 下载，**与 data 目录无关，重装不丢**）
+- **随包工具原件**：`tools/`（只读，走 `/tools/<文件名>` 下载，**与 data 目录无关，重装不丢**）。仓库内默认为空目录，运维上传工具时把原件放这里
 
 容器化部署（可选）：
 
@@ -275,7 +275,7 @@ python3 build_zip.py    # 生成 ai-tools-server.zip / ai-tools-docker.zip
 `sudo journalctl -u ai-tools | grep -A2 管理员`。若 `accounts_preset.json` 存在则用预设账号，否则自动生成随机密码并打印在日志里。
 
 **Q：怎么把网站里已有的工具清空重来？**
-`python3 ai-tools-server/server.py --reseed`（重置回出厂的 9 个真实工具）。
+`python3 ai-tools-server/server.py --reseed`（按 `seed/seed_tools.json` 重置，当前为空即重置成空站点）。
 ⚠️ **别用 `--clear`**：它会清空工具表并打上「不再自动导入种子」的标记，重启也不会灌回来，站点会一直是空的。
 
 **Q：改前端页面？**
