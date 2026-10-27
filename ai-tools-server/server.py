@@ -562,13 +562,19 @@ def wecom_diagnose():
     #   https://<域名>/WW_verify_xxx.txt，取不到就报「校验域名所有权不通过」。
     #   这里做两件事：① 找出本机放好的校验文件 ② 真的去公网取一次，看企微能不能取到。
     vf_name = ""
-    try:
-        for fn in sorted(os.listdir(WEBROOT_DIR)):
-            if re.match(r"^WW_verify_[A-Za-z0-9_-]+\.txt$", fn):
-                vf_name = fn
-                break
-    except Exception:
-        pass
+    # 校验文件可能放两处：① web/（随代码分发，Docker COPY 自动带上）
+    #                ② data/webroot/（运维手动丢进去，不用重启）
+    # 两处都找，找到任一即可。
+    for d in (WEB_DIR, WEBROOT_DIR):
+        try:
+            for fn in sorted(os.listdir(d)):
+                if re.match(r"^WW_verify_[A-Za-z0-9_-]+\.txt$", fn):
+                    vf_name = fn
+                    break
+        except Exception:
+            pass
+        if vf_name:
+            break
     if not vf_name:
         add("verify_file", True, "域名校验文件",
             "本机尚未放置校验文件（如果企微后台提示「校验域名所有权不通过」，"

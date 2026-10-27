@@ -16,13 +16,15 @@ server {
     # 企微保存可信域名时会来取 https://<域名>/WW_verify_xxx.txt，
     # 取不到就报「校验域名所有权不通过」。
     # ★ 这里**不走后端**，nginx 直接读磁盘 → 后端还没部署完也能通过校验，
-    #   不用等运维起服务。文件放 /var/www/ai-tools-webroot/ 即可。
+    #   不用等运维起服务。
+    # ★ 文件已随仓库分发（ai-tools-server/web/WW_verify_xxx.txt），
+    #   deploy.sh 会自动复制到 /var/www/ai-tools-webroot/，不用手工放。
     # ★ 内容必须是纯文本原样输出，不能是 HTML 页面（企微会判不通过）。
     #   用 root 就是原样吐文件（不加 index、不做二次处理）。
     #
     # ⚠️ 80 端口的跳转必须写在 location / 里，不能写在 server 层：
     #    server 层的 return 在 rewrite 阶段执行，早于 location 匹配，
-    #    那样这个校验文件的 location 永远轮不到 → 企微取 http 就会拿到 301 跳转。
+    #    那这个校验文件的 location 永远轮不到 → 企微取 http 就会拿到 301 跳转。
     location ~ ^/WW_verify_[A-Za-z0-9_-]+\.txt$ {
         root /var/www/ai-tools-webroot;
         default_type text/plain;

@@ -122,14 +122,29 @@ fi
 
 # ---------- 5. 上传代码（若已上传则跳过） ----------
 say "准备代码目录 $APP_DIR"
+# 本脚本所在位置：<源码根>/deploy/deploy.sh → 源码根就是上一级
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+SRC_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 mkdir -p "$APP_DIR"
 if [ -f "$APP_DIR/server.py" ]; then
-  echo "  已有 server.py，跳过代码上传（若要更新请手动 scp 覆盖后重跑本脚本）"
+  echo "  已有 server.py，跳过代码上传（若要更新请手动覆盖后重跑本脚本）"
+elif [ -f "$SRC_ROOT/server.py" ]; then
+  echo "  从当前源码树复制代码 → $APP_DIR"
+  echo "    来源: $SRC_ROOT"
+  # 只同步代码，不带运行时数据（data/ 里是数据库和上传附件，不能覆盖）
+  for item in server.py web seed tools deploy dev_check.sh dev_guard.sh dev_tunnel.sh \
+              requirements.txt wecom_config.example.json accounts_preset.example.json tests; do
+    [ -e "$SRC_ROOT/$item" ] || continue
+    rm -rf "$APP_DIR/$item"
+    cp -r "$SRC_ROOT/$item" "$APP_DIR/$item"
+  done
+  echo "  代码已就位"
 else
   echo -e "\033[1;33m  代码还没上传到 $APP_DIR。请先执行：\033[0m"
   echo -e "    scp 'ai-tools-server.zip' user@<服务器IP>:/tmp/"
   echo -e "    cd /tmp && unzip -q ai-tools-server.zip && cp -r 'ai-tools-server 2'/* $APP_DIR/"
   echo -e "    bash deploy.sh $CORP_ID $AGENT_ID <Secret> $BASE_URL"
+  echo -e "  （或者：git clone 仓库后直接在本仓库内跑 bash ai-tools-server/deploy/deploy.sh ...）"
   exit 2
 fi
 
@@ -210,6 +225,15 @@ echo "  已写入 $SVC_FILE（监听 127.0.0.1:$UPSTREAM_PORT，与 nginx upstre
 #   1) $WEBROOT_NGINX  → nginx location 直接读磁盘（不经后端，最稳）
 #   2) $APP_DIR/data/webroot → 后端 serve_static 兜底（后端在跑时生效）
 VERIFY_SRC="${7:-}"
+if [ -z "$VERIFY_SRC" ]; then
+  # ★ 自动发现：校验文件已随仓库分发（ai-tools-server/web/WW_verify_xxx.txt），
+  #   运维 clone 完直接部署即可，**不需要手动传文件**。
+  #   若企微后台重新生成了校验串 → 把新文件覆盖到 web/ 再重跑本脚本。
+  for cand in "$SRC_ROOT"/web/WW_verify_*.txt "$APP_DIR"/web/WW_verify_*.txt \
+              "$APP_DIR"/data/webroot/WW_verify_*.txt; do
+    if [ -f "$cand" ]; then VERIFY_SRC="$cand"; break; fi
+  done
+fi
 mkdir -p "$WEBROOT_NGINX" "$APP_DIR/data/webroot"
 if [ -n "$VERIFY_SRC" ] && [ -f "$VERIFY_SRC" ]; then
   VF_NAME=$(basename "$VERIFY_SRC")
@@ -229,8 +253,8 @@ if [ -n "$VERIFY_SRC" ] && [ -f "$VERIFY_SRC" ]; then
     echo "    → $APP_DIR/data/webroot/$VF_NAME（后端兜底）"
   fi
 else
-  echo "  未提供校验文件路径（第 7 个参数）。如企微后台报「校验域名所有权不通过」，"
-  echo "  重新跑一次并带上文件路径，或直接手动放到："
+  warn "没找到校验文件（仓库里应有 ai-tools-server/web/WW_verify_xxx.txt）。"
+  echo "  如企微后台报「校验域名所有权不通过」，把企微给的 WW_verify_xxx.txt 放到："
   echo "    $WEBROOT_NGINX/  与  $APP_DIR/data/webroot/"
 fi
 
@@ -283,9 +307,8 @@ say "完成"
 cat <<EOF
 下一步（前三项需要人去企微后台点，其余脚本都做完了）：
 1. 【企微后台】应用详情页 →「网页授权及JS-SDK」→「设置」→「可信域名」→ 填 $DOMAIN
-   → 企微会生成 WW_verify_xxx.txt 让你下载
-   → 把这个文件放到服务器的 $WEBROOT_NGINX/ 目录，然后回后台点保存
-   （本次部署若已传入校验文件路径，上面已自动放好并验证过公网可达）
+   → 校验文件已随仓库分发并自动放好（上面已实测公网可达），直接回后台点保存即可
+   ⚠️ 若企微重新生成了校验串 → 把新文件覆盖到 $APP_DIR/web/ 再重跑本脚本
    ⚠️ 缺这个 → 报「校验域名所有权不通过」，且**加不了企业可信 IP**
 2. 【企微后台】应用 →「企业微信授权登录」→「设置」→「设置授权回调域」
    填：$DOMAIN      ← 缺这个会报 -31020 授权完成回调域名不一致

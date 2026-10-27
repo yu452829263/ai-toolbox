@@ -35,7 +35,8 @@ ai-tools-server/
 ├── README.md              本文档
 ├── requirements.txt       注明：本项目零第三方依赖
 ├── web/
-│   └── index.html         前端页面（单文件自包含，图片已内联）
+│   ├── index.html         前端页面（单文件自包含，图片已内联）
+│   └── WW_verify_*.txt    企微「可信域名」校验文件（随包分发，部署自动放好）
 ├── seed/
 │   └── seed_tools.json    初始数据（默认留空；工具由运维在后台手动上传）
 ├── tests/                 回归测试
@@ -43,6 +44,7 @@ ai-tools-server/
 │   ├── test_wecom_login.py       企微登录链路（零依赖）
 │   ├── test_admin_whitelist.py   管理员白名单（零依赖）
 │   ├── test_trusted_ip.py        可信 IP 自动核对（零依赖）
+│   ├── test_verify_file.py       企微域名校验文件（零依赖）
 │   ├── test_login_ui.js          登录页 UI（需 puppeteer）
 │   ├── test_upload_login_gate.js 上传入口登录门禁（需 puppeteer）
 │   └── test_upload_real_login.js 真实账号登录闭环（需 puppeteer）
@@ -141,8 +143,10 @@ python3 server.py --reseed
 - **可信域名**（**必须第一个配**）：应用详情页 →「开发者接口」→「网页授权及 JS-SDK」
   →「设置」→「可信域名」，填 `aitoolbox.maihaoche.com`，点「申请校验域名」，
   企微会生成一个 `WW_verify_xxx.txt` 让你下载。
-  把这个 txt 放到服务器上（`data/webroot/` 或 `/var/www/ai-tools-webroot/`），
-  再回后台点「保存」。
+  ✅ **本项目的校验文件已随包分发在 `web/WW_verify_VqlqcYAYJtkoHyot.txt`**，
+  `deploy.sh` 会自动放到 nginx 直读目录 + `data/webroot/`，
+  所以**不用下载、不用上传、不用手工放**，填完域名直接点「保存」就过。
+  后台下载的那份只是给你核对的，部署时不用管它。
   ⚠️ **企业微信已认证的企业，必须先有「可信域名」才能加「企业可信 IP」**——
   所以后台点「企业可信 IP → 配置」时提示"请先设置可信域名或接收消息服务器URL"
   是**前置校验**，不是操作错了。校验文件放好后**不用重启任何服务**。
@@ -159,14 +163,16 @@ python3 server.py --reseed
 > 「企业可信 IP」那一栏。页面上那个「JD-sdk 网页」只是企微提供的
 > IP 段查询/校验工具，不是入口 —— 真正的「配置」按钮在应用详情页里。
 
-> **校验文件放哪**（两条路放一处即可，都是即时生效、不用重启）：
+> **校验文件放哪**（`deploy.sh` 会自动放好这三条路，都即时生效、不用重启）：
 > | 位置 | 说明 |
 > |---|---|
+> | `web/WW_verify_xxx.txt` | ✅ 随包分发的那份；后端直接服务它，Docker 也会 COPY 进镜像 |
 > | `data/webroot/WW_verify_xxx.txt` | 后端从根目录提供该文件（Docker：宿主机 `/data/ai-tools/webroot/`） |
 > | `/var/www/ai-tools-webroot/WW_verify_xxx.txt` | nginx 直接读磁盘，**后端没起来也能过校验** |
 >
 > 文件内容必须是**纯文本原样**（16 位随机串，无 BOM/换行），
 > 且域名要完全一致。排查详见 `docs/服务器部署与企微扫码登录上线手册.md` 第 3.0 节。
+> 若企微重新生成了校验串 → 覆盖 `web/` 下的同名文件后重跑 `deploy.sh`。
 
 > 本项目默认走**扫码授权登录**（`qrConnect`，PC 浏览器显示二维码、手机企微扫）。
 > 如果要把入口放进企业微信工作台应用，改用 `mode=oauth`（网页授权 snsapi_base，

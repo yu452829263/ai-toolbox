@@ -14,11 +14,12 @@ services:
       #    cp wecom_config.example.json wecom_config.json && 填值
       - ./wecom_config.json:/app/wecom_config.json:ro
       #
-      # 企微「可信域名」所有权校验文件（WW_verify_xxx.txt）放这里：
-      #   宿主机 /data/ai-tools/webroot/  ←→  容器 /app/data/webroot/
-      # 后端从 /app/data/webroot/ 提供根目录文件，把文件丢进宿主机那个目录即刻生效，
-      # **不用重新 build 镜像、不用重启容器**。
-      # （不能放 web/ —— 那是 build 时 COPY 进镜像的，加文件就得重建镜像。）
-      # 目录首次由容器自动创建；之后要放文件请用：
-      #   sudo mkdir -p /data/ai-tools/webroot
-      #   sudo cp WW_verify_xxx.txt /data/ai-tools/webroot/
+      # 企微「可信域名」所有权校验文件（WW_verify_xxx.txt）：
+      #   ★ 已随仓库分发 —— Dockerfile 的 COPY web/ /app/web/ 会把它带进镜像，
+      #     所以**不用手工放**，容器一起来就能通过企微域名校验。
+      #   后端从 /app/web/ 提供根目录文件（web/ 优先于 data/webroot/）。
+      #   若企微后台重新生成了校验串 → 覆盖 web/ 下的同名文件后重新 build。
+      #
+      #   也可以放 data/webroot/（宿主 /data/ai-tools/webroot/ → 容器 /app/data/webroot/），
+      #   丢进去即刻生效，不用重新 build 镜像、不用重启容器。
+      #   （不能放 web/ 以外又期望免 rebuild —— web/ 是 build 时 COPY 进镜像的。）

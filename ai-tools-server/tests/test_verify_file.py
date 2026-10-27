@@ -33,6 +33,12 @@ os.environ["SEED_FILE"] = os.path.join(TMP, "no_seed.json")
 os.environ["WECOM_CORP_ID"] = "wwtest"
 os.environ["WECOM_AGENT_ID"] = "1000196"
 os.environ["WECOM_SECRET"] = "dummy"
+# web/ 也要隔离：仓库里 web/ 已随包分发了一份校验文件，
+# 若直接用真实 web/，测试会拿到"仓库自带那份"而不是自己造的场景 → 测不准。
+# 用临时 web 目录，就能精确控制「web/ 里有没有校验文件」这一状态。
+TEST_WEB = os.path.join(TMP, "web")
+os.makedirs(TEST_WEB, exist_ok=True)
+os.environ["WEB_DIR"] = TEST_WEB
 
 sys.path.insert(0, PKG)
 import server  # noqa: E402
@@ -122,9 +128,12 @@ print("⑤ 体检项 verify_file 能区分各种情况")
 os.environ["WECOM_BASE_URL"] = BASE
 server.load_wecom_config(force=True)
 
-# 5-a 未放文件
+# 5-a 未放文件（两处都没有：web/ 和 data/webroot/）
 shutil.rmtree(webroot, ignore_errors=True)
 os.makedirs(webroot, exist_ok=True)
+for fn in os.listdir(TEST_WEB):
+    if fn.startswith("WW_verify_"):
+        os.remove(os.path.join(TEST_WEB, fn))
 items = {i["key"]: i for i in server.wecom_diagnose().get("items", [])}
 vf = items.get("verify_file")
 check("未放校验文件时仍有该体检项", vf is not None)
@@ -140,6 +149,24 @@ items = {i["key"]: i for i in server.wecom_diagnose().get("items", [])}
 vf = items.get("verify_file")
 check("文件可正常访问时判定通过", vf and vf.get("ok") is True,
       "实际 %s / %s" % ((vf or {}).get("ok"), (vf or {}).get("detail", "")[:90]))
+
+# 5-b2 放在 web/ 里（随仓库分发的那份）也要能被识别
+shutil.rmtree(webroot, ignore_errors=True)
+os.makedirs(webroot, exist_ok=True)
+with open(os.path.join(TEST_WEB, VF_NAME), "wb") as f:
+    f.write(VF_VALUE.encode("ascii"))
+items = {i["key"]: i for i in server.wecom_diagnose().get("items", [])}
+vf = items.get("verify_file")
+check("web/ 里的那份也能被体检识别",
+      vf and VF_NAME in (vf.get("detail") or ""), (vf or {}).get("detail", "")[:90])
+# 顺便验证它真的能从根目录取到（web/ 优先于 data/webroot/）
+st_w, body_w, ct_w = fetch("/" + VF_NAME)
+check("web/ 里的校验文件能从根目录取到", st_w == 200, "实际 %s" % st_w)
+check("web/ 里的校验文件内容正确", body_w == VF_VALUE.encode("ascii"),
+      "实际 %r" % body_w[:40])
+check("web/ 里的校验文件 Content-Type 是 text/plain",
+      ct_w.lower().startswith("text/plain"), "实际 %s" % ct_w)
+os.remove(os.path.join(TEST_WEB, VF_NAME))
 
 # 5-c 取到的是 HTML → 报「必须是纯文本」
 html_file = os.path.join(webroot, VF_NAME)
@@ -188,6 +215,13 @@ check("会放到后端 data/webroot 兜底", "data/webroot" in dep)
 check("有公网可达性验证", "校验文件" in dep and "http  取" in dep)
 check("操作清单里包含可信域名这一步",
       "可信域名" in dep and "WW_verify" in dep)
+# ★ 自动发现：运维 clone 完直接部署，不该还要手工传文件
+check("校验文件能自动发现（不用传第 7 参数）",
+      'SRC_ROOT"/web/WW_verify_' in dep or "$SRC_ROOT/web/WW_verify_" in dep,
+      "未找到自动发现逻辑")
+check("能从源码树自动复制代码（不用先 scp）",
+      "SRC_ROOT" in dep and "代码已就位" in dep,
+      "未找到自动复制逻辑")
 
 print()
 print("⑧ Dockerfile / compose 支持 webroot 挂载")
@@ -197,6 +231,24 @@ check("Dockerfile 创建了 webroot 目录", "/app/data/webroot" in df)
 comp = open(os.path.join(PKG, "deploy", "docker", "docker-compose.yml"),
             encoding="utf-8").read()
 check("compose 说明了 webroot 位置", "webroot" in comp)
+
+print()
+print("⑨ 校验文件已随仓库分发（运维 clone 完直接部署，不用手工传）")
+real_web = os.path.join(PKG, "web")
+found = [f for f in os.listdir(real_web)
+         if f.startswith("WW_verify_") and f.endswith(".txt")]
+check("web/ 里有随包分发的校验文件", len(found) == 1,
+      "实际找到 %d 个：%s" % (len(found), found))
+if found:
+    # 内容必须是 16 位纯 ASCII，无 BOM 无换行 —— 否则企微判不通过
+    with open(os.path.join(real_web, found[0]), "rb") as f:
+        raw = f.read()
+    check("校验文件是 16 字节纯 ASCII（无 BOM 无换行）",
+          len(raw) == 16 and raw.decode("ascii").isalnum(),
+          "实际 %d 字节 %r" % (len(raw), raw[:40]))
+    # Dockerfile 的 COPY web/ /app/web/ 会把它带进镜像 → Docker 部署也自动生效
+    check("Dockerfile COPY 了 web/（校验文件自动进镜像）",
+          "COPY web/" in df, df[:200])
 
 print()
 print("=" * 56)
