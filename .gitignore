@@ -5,6 +5,10 @@ data/
 *.db-wal
 *.db-shm
 
+# ---- 企微域名所有权校验文件（一次性凭证，不进公开仓库）----
+WW_verify_*.txt
+运维交付-校验文件/
+
 # ---- 真实配置（含 Secret / 默认密码，绝不进版本库）----
 ai-tools-server/wecom_config.json
 ai-tools-server/accounts_preset.json
