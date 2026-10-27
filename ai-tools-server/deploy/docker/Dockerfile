@@ -24,7 +24,7 @@ COPY tools/ /app/tools/
 COPY wecom_config.example.json /app/wecom_config.example.json
 COPY accounts_preset.example.json /app/accounts_preset.example.json
 
-RUN mkdir -p /app/data/uploads
+RUN mkdir -p /app/data/uploads /app/data/webroot
 
 VOLUME /app/data
 

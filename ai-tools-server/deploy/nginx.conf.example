@@ -11,8 +11,28 @@ server {
     listen 80;
     server_name ai.corp.com;     # ← 改成你们的域名
 
+    # ────────────────────────────────────────────────────────────
+    # 企微「可信域名」所有权校验文件（WW_verify_xxx.txt）
+    # 企微保存可信域名时会来取 https://<域名>/WW_verify_xxx.txt，
+    # 取不到就报「校验域名所有权不通过」。
+    # ★ 这里**不走后端**，nginx 直接读磁盘 → 后端还没部署完也能通过校验，
+    #   不用等运维起服务。文件放 /var/www/ai-tools-webroot/ 即可。
+    # ★ 内容必须是纯文本原样输出，不能是 HTML 页面（企微会判不通过）。
+    #   用 root 就是原样吐文件（不加 index、不做二次处理）。
+    #
+    # ⚠️ 80 端口的跳转必须写在 location / 里，不能写在 server 层：
+    #    server 层的 return 在 rewrite 阶段执行，早于 location 匹配，
+    #    那样这个校验文件的 location 永远轮不到 → 企微取 http 就会拿到 301 跳转。
+    location ~ ^/WW_verify_[A-Za-z0-9_-]+\.txt$ {
+        root /var/www/ai-tools-webroot;
+        default_type text/plain;
+        add_header Cache-Control "no-cache";
+    }
+
     # 80 端口跳 HTTPS（如公司统一由网关做 TLS，可删掉这段）
-    return 301 https://$host$request_uri;
+    location / {
+        return 301 https://$host$request_uri;
+    }
 }
 
 server {
@@ -21,6 +41,15 @@ server {
 
     ssl_certificate     /etc/nginx/ssl/ai.corp.com.crt;   # ← 改成实际证书路径
     ssl_certificate_key /etc/nginx/ssl/ai.corp.com.key;
+
+    # ────────────────────────────────────────────────────────────
+    # 校验文件：443 也要能取到（企微可能先试 https 再试 http）。
+    # 同一个文件目录，root 指向同一处 → 放一次两边都生效。
+    location ~ ^/WW_verify_[A-Za-z0-9_-]+\.txt$ {
+        root /var/www/ai-tools-webroot;
+        default_type text/plain;
+        add_header Cache-Control "no-cache";
+    }
 
     # 附件上传大小上限：必须 ≥ 后端 MAX_UPLOAD_MB（默认 50）
     client_max_body_size 100M;

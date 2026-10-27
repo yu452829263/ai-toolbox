@@ -25,6 +25,14 @@ SEED_FILE = os.path.abspath(
     os.environ.get("SEED_FILE", os.path.join(BASE_DIR, "seed", "seed_tools.json"))
 )
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
+# 企微「可信域名」所有权校验文件（WW_verify_xxx.txt）必须放在**站点根目录**，
+# 且内容要是纯文本（不能是 HTML 包裹、不能重定向）。
+# 放在 data/webroot/ 下有三个好处：
+#   1) data/ 已经是 volume 挂载目录 → Docker 部署时运维把文件丢进去即可，
+#      **不需要重新 build 镜像**（web/ 是 build 时 COPY 进去的，改它就得重建）；
+#   2) 改配置/放文件都即时生效，不用重启服务；
+#   3) 校验文件是一次性的、含随机校验串，属于运行期数据，不该进版本库。
+WEBROOT_DIR = os.path.join(DATA_DIR, "webroot")
 # 随包分发的真实工具原件（tools/xxx.zip）。与用户上传的附件分开存放，
 # 目录只读、不会随运行数据变动，交付包里天然可复现。
 TOOLS_DIR = os.path.abspath(os.environ.get("TOOLS_DIR", os.path.join(BASE_DIR, "tools")))
@@ -549,6 +557,57 @@ def wecom_diagnose():
         add("public_reachable", False, "对外访问", "未配置 WECOM_BASE_URL",
             "填 wecom_config.json 的 base_url 为 https://aitoolbox.maihaoche.com")
 
+    # ④-b 可信域名所有权校验文件
+    #   企微「网页授权及JS-SDK → 可信域名」保存前会来取
+    #   https://<域名>/WW_verify_xxx.txt，取不到就报「校验域名所有权不通过」。
+    #   这里做两件事：① 找出本机放好的校验文件 ② 真的去公网取一次，看企微能不能取到。
+    vf_name = ""
+    try:
+        for fn in sorted(os.listdir(WEBROOT_DIR)):
+            if re.match(r"^WW_verify_[A-Za-z0-9_-]+\.txt$", fn):
+                vf_name = fn
+                break
+    except Exception:
+        pass
+    if not vf_name:
+        add("verify_file", True, "域名校验文件",
+            "本机尚未放置校验文件（如果企微后台提示「校验域名所有权不通过」，"
+            "把它给的 WW_verify_xxx.txt 放到 %s 即可，不用重启服务）" % WEBROOT_DIR,
+            "")
+    elif not WECOM_BASE_URL:
+        add("verify_file", False, "域名校验文件",
+            "已找到 %s，但没配 base_url，无法验证公网可达" % vf_name,
+            "配置 wecom_config.json 的 base_url 为 https://aitoolbox.maihaoche.com")
+    else:
+        vf_url = "%s/%s" % (WECOM_BASE_URL.rstrip("/"), vf_name)
+        st, body, ct = _http_fetch(vf_url, timeout=10)
+        # 企微要求：内容是纯文本，不能是 HTML 包裹、不能是 302 跳转
+        head = body[:400].lower() if isinstance(body, bytes) else b""
+        looks_html = b"<html" in head or b"<!doctype" in head
+        if st == 200 and not looks_html:
+            add("verify_file", True, "域名校验文件",
+                "%s 可从公网正常访问（%s），企微应该能校验通过" % (vf_name, ct or "text/plain"))
+        elif st == 503:
+            add("verify_file", False, "域名校验文件",
+                "域名返回 503 —— nginx vhost 在，但后端没起来，企微取到的是错误页",
+                "两种解法任选：① 等后端部署好（文件放 %s 即可）；"
+                "② **现在就过**：把 %s 放到 %s，"
+                "由 nginx 直接读磁盘，不经后端（见 deploy/nginx.conf.example）"
+                % (WEBROOT_DIR, vf_name, "/var/www/ai-tools-webroot"))
+        elif st == 0:
+            add("verify_file", False, "域名校验文件",
+                "从公网连不上 %s（DNS 未解析 / 证书问题 / 网络不通）" % vf_url,
+                "先确认域名能打开：curl -I %s" % vf_url)
+        elif st != 200:
+            add("verify_file", False, "域名校验文件",
+                "公网取 %s 返回 HTTP %s" % (vf_name, st),
+                "企微要求这个文件能正常访问（200）。检查 nginx 是否有那条 location、"
+                "以及 80 端口是否被 301 跳转拦掉了")
+        else:
+            add("verify_file", False, "域名校验文件",
+                "%s 能访问（200），但内容像是 HTML 页面 —— 企微不接受，会判定校验不通过" % vf_name,
+                "该文件必须是纯文本（直接放文件本身，不要用页面渲染它）")
+
     # ⑤ 管理员白名单（决定扫码登录后是不是管理员）
     if WECOM_ADMIN_USERIDS:
         add("admin_whitelist", True, "管理员白名单",
@@ -574,7 +633,7 @@ def wecom_diagnose():
                          if not i.get("ok") and i.get("action")
                          and i.get("key") not in BACKEND_KEYS]
     out["ready"] = all(i.get("ok") for i in out["items"] if i.get("key") in
-                        ("credentials", "callback_domain", "trusted_ip"))
+                        ("credentials", "callback_domain", "trusted_ip", "verify_file"))
     return out
 
 
@@ -849,6 +908,34 @@ def _http_bytes(url, timeout=12, referer=""):
             return False, "HTTP %s" % e.code, ""
     except Exception as e:
         return False, str(e), ""
+
+
+def _http_fetch(url, timeout=12, referer=""):
+    """GET 一个地址，返回 (status_code, body_bytes, content_type)。
+
+    与 _http_bytes 的区别：**不把非 2xx 当失败**，状态码照实返回。
+    校验文件体检需要区分「503（后端没起来）」和「200 但内容是 HTML」——
+    这两种给运维的提示完全不同，混在一起会误导。
+
+    ★ 刻意绕过系统代理（ProxyHandler({})）：企微接口和本机自检都要求
+      直连，走代理会被中间层拦出 502/503，结论全是假的。
+    """
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        hdr = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                              "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"}
+        if referer:
+            hdr["Referer"] = referer
+        req = urllib.request.Request(url, headers=hdr)
+        with opener.open(req, timeout=timeout) as resp:
+            return int(resp.status), resp.read(), (resp.headers.get("Content-Type") or "")
+    except urllib.error.HTTPError as e:
+        try:
+            return int(e.code), e.read(), (e.headers.get("Content-Type") or "")
+        except Exception:
+            return int(e.code), b"", ""
+    except Exception:
+        return 0, b"", ""
 
 
 def wecom_qr_fetch():
@@ -1143,6 +1230,7 @@ def meta_set(conn, key, val):
 def init_db(reseed=False, clear=False):
     os.makedirs(DATA_DIR, exist_ok=True)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
+    os.makedirs(WEBROOT_DIR, exist_ok=True)
     conn = db()
     conn.executescript(SCHEMA)
     migrate_db(conn)
@@ -2290,13 +2378,27 @@ class Handler(BaseHTTPRequestHandler):
         if not real.startswith(os.path.realpath(WEB_DIR) + os.sep):
             return self._err(403, "禁止访问")
         if not os.path.isfile(real):
-            return self._err(404, "页面不存在：%s" % p)
+            # 企微「可信域名」所有权校验文件：放在 data/webroot/ 下即可生效，
+            # 不用重新 build 镜像、不用重启服务（运维丢文件进去就完事）。
+            # 只放行 WW_verify_*.txt —— 免得这个目录变成任意文件泄露口。
+            if not re.match(r"^WW_verify_[A-Za-z0-9_-]+\.txt$", rel):
+                return self._err(404, "页面不存在：%s" % p)
+            wr = os.path.realpath(os.path.join(WEBROOT_DIR, rel))
+            if not wr.startswith(os.path.realpath(WEBROOT_DIR) + os.sep):
+                return self._err(403, "禁止访问")
+            if not os.path.isfile(wr):
+                return self._err(404, "页面不存在：%s" % p)
+            real = wr
         ctype = mimetypes.guess_type(real)[0] or "application/octet-stream"
         if ctype.startswith("text/") or ctype in ("application/javascript", "application/json"):
             ctype += "; charset=utf-8"
         with open(real, "rb") as f:
             data = f.read()
-        cache = "no-cache" if real.endswith(".html") else "public, max-age=3600"
+        # 校验文件必须每次都取最新的（企微会换校验串），不给缓存
+        if os.path.basename(real).startswith("WW_verify_"):
+            cache = "no-cache"
+        else:
+            cache = "no-cache" if real.endswith(".html") else "public, max-age=3600"
         return self._send(200, data, ctype, {"Cache-Control": cache})
 
 def main():

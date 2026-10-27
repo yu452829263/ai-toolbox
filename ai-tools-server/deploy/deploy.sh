@@ -4,6 +4,10 @@
 #   用法：  bash deploy.sh <CorpID> <AgentId> <Secret> [base_url] [redirect]
 #   示例：  bash deploy.sh ww1234567890 1000002 abcdefsecret https://aitoolbox.maihaoche.com
 #
+#   域名所有权校验文件（可选，第 7 个参数）：
+#     bash deploy.sh <CorpID> <AgentId> <Secret> <base_url> <redirect> <trusted_ips> <WW_verify_xxx.txt路径>
+#     文件会被复制到 nginx 直接可读的位置，企微保存「可信域名」时能直接校验通过。
+#
 # 特性：
 #   - 自动从 nginx 现有 vhost 读出 upstream 端口，不用手猜
 #   - 幂等：可重复执行；已有 data/ 不会覆盖
@@ -21,6 +25,8 @@ APP_DIR=/opt/ai-tools-server
 SERVICE=ai-tools
 SVC_FILE=/etc/systemd/system/ai-tools.service
 DOMAIN=aitoolbox.maihaoche.com
+# 校验文件放这里：nginx 直接读磁盘（不经后端）→ 后端没起来也能通过企微校验
+WEBROOT_NGINX=/var/www/ai-tools-webroot
 
 say()  { echo -e "\n\033[1;36m==> $*\033[0m"; }
 warn() { echo -e "\033[1;33m[警告] $*\033[0m"; }
@@ -196,6 +202,38 @@ WantedBy=multi-user.target
 EOF
 echo "  已写入 $SVC_FILE（监听 127.0.0.1:$UPSTREAM_PORT，与 nginx upstream 对齐）"
 
+# ---------- 7-b 域名所有权校验文件（企微「可信域名」用） ----------
+# 企微保存「网页授权及JS-SDK → 可信域名」时会来取
+#   https://<域名>/WW_verify_xxx.txt
+# 取不到 → 报「校验域名所有权不通过」。
+# 放两处，nginx 与后端各读一份，任何一条通路通就行：
+#   1) $WEBROOT_NGINX  → nginx location 直接读磁盘（不经后端，最稳）
+#   2) $APP_DIR/data/webroot → 后端 serve_static 兜底（后端在跑时生效）
+VERIFY_SRC="${7:-}"
+mkdir -p "$WEBROOT_NGINX" "$APP_DIR/data/webroot"
+if [ -n "$VERIFY_SRC" ] && [ -f "$VERIFY_SRC" ]; then
+  VF_NAME=$(basename "$VERIFY_SRC")
+  case "$VF_NAME" in
+    WW_verify_*.txt) ;;
+    *) warn "文件名不像企微校验文件（应形如 WW_verify_xxx.txt）：$VF_NAME"; VF_NAME="";;
+  esac
+  if [ -n "$VF_NAME" ]; then
+    cp -f "$VERIFY_SRC" "$WEBROOT_NGINX/$VF_NAME"
+    cp -f "$VERIFY_SRC" "$APP_DIR/data/webroot/$VF_NAME"
+    chmod 644 "$WEBROOT_NGINX/$VF_NAME" "$APP_DIR/data/webroot/$VF_NAME"
+    # nginx worker 要能读
+    chown -R "$RUN_USER:$RUN_USER" "$APP_DIR/data/webroot" 2>/dev/null || true
+    chmod 755 "$WEBROOT_NGINX" 2>/dev/null || true
+    echo "  已放置校验文件：$VF_NAME"
+    echo "    → $WEBROOT_NGINX/$VF_NAME（nginx 直读）"
+    echo "    → $APP_DIR/data/webroot/$VF_NAME（后端兜底）"
+  fi
+else
+  echo "  未提供校验文件路径（第 7 个参数）。如企微后台报「校验域名所有权不通过」，"
+  echo "  重新跑一次并带上文件路径，或直接手动放到："
+  echo "    $WEBROOT_NGINX/  与  $APP_DIR/data/webroot/"
+fi
+
 # ---------- 8. 启动 ----------
 say "启动服务"
 systemctl daemon-reload
@@ -216,6 +254,23 @@ curl -s -m 8 "http://127.0.0.1:$UPSTREAM_PORT/api/login/wecom/status" && echo ||
 echo -n "  域名访问   : "
 curl -sk -m 10 "https://$DOMAIN/api/health" && echo || echo "失败"
 
+# 校验文件公网可达性（企微「可信域名」所有权校验就看这个）
+VF_CHECK=$(ls "$WEBROOT_NGINX"/WW_verify_*.txt 2>/dev/null | head -1)
+if [ -n "$VF_CHECK" ]; then
+  VF_NAME=$(basename "$VF_CHECK")
+  echo "  校验文件   : $VF_NAME"
+  echo -n "    https 取: "
+  VF_HTTPS=$(curl -sk -m 10 "https://$DOMAIN/$VF_NAME")
+  [ "$VF_HTTPS" = "$(cat "$VF_CHECK")" ] \
+    && echo "✅ 内容一致" \
+    || echo "❌ 取不到或内容不一致（取到=[${VF_HTTPS:0:60}]）"
+  echo -n "    http  取: "
+  VF_HTTP=$(curl -s -m 10 -o /dev/null -w "%{http_code}" "http://$DOMAIN/$VF_NAME")
+  [ "$VF_HTTP" = "200" ] && echo "✅ 200" || echo "❌ HTTP $VF_HTTP（企微可能先试 http）"
+else
+  echo "  校验文件   : 未放置（企微后台若报「校验域名所有权不通过」→ 放 WW_verify_xxx.txt 到 $WEBROOT_NGINX/）"
+fi
+
 # ---------- 10. 企微后台三项体检 ----------
 say "企微后台配置体检（决定扫码能不能真的登进去）"
 if [ -f "$APP_DIR/dev_check.sh" ]; then
@@ -226,23 +281,28 @@ fi
 
 say "完成"
 cat <<EOF
-下一步（只有前两项需要人去后台点，其余脚本都做完了）：
-1. 【企微后台】应用 →「企业微信授权登录」→「设置」→「设置授权回调域」
+下一步（前三项需要人去企微后台点，其余脚本都做完了）：
+1. 【企微后台】应用详情页 →「网页授权及JS-SDK」→「设置」→「可信域名」→ 填 $DOMAIN
+   → 企微会生成 WW_verify_xxx.txt 让你下载
+   → 把这个文件放到服务器的 $WEBROOT_NGINX/ 目录，然后回后台点保存
+   （本次部署若已传入校验文件路径，上面已自动放好并验证过公网可达）
+   ⚠️ 缺这个 → 报「校验域名所有权不通过」，且**加不了企业可信 IP**
+2. 【企微后台】应用 →「企业微信授权登录」→「设置」→「设置授权回调域」
    填：$DOMAIN      ← 缺这个会报 -31020 授权完成回调域名不一致
-2. 【企微后台】应用管理 → 自建应用(1000196) → 应用详情页底部「企业可信 IP」→ 配置 → 加服务器出口 IP
+3. 【企微后台】应用管理 → 自建应用(1000196) → 应用详情页底部「企业可信 IP」→ 配置 → 加服务器出口 IP
    （上面已打印；${OUT_IP:-请在服务器上执行 curl -s https://ifconfig.me}）
    ← 缺这个能扫出码、能扫，但换不到身份，登不进来
-3. 打开 https://$DOMAIN → 登录页应出现可点击的「使用企业微信扫码登录」
-4. 手机企业微信扫描二维码完成登录
-5. 首次登录会自动建号：用户名 wecom_<userid>，姓名/部门从企微通讯录同步
-6. 想把工具库重置回出厂状态（当前出厂即空站点；会清空所有人上传的工具和计数）：
+4. 打开 https://$DOMAIN → 登录页应出现可点击的「使用企业微信扫码登录」
+5. 手机企业微信扫描二维码完成登录
+6. 首次登录会自动建号：用户名 wecom_<userid>，姓名/部门从企微通讯录同步
+7. 想把工具库重置回出厂状态（当前出厂即空站点；会清空所有人上传的工具和计数）：
    systemctl stop $SERVICE && cd $APP_DIR && \\
      python3 server.py --reseed && systemctl start $SERVICE
    ⚠️ 不要用 --clear：它会清空工具表并打上「不再自动导入种子」的标记，
       重启也不会灌回来，站点会一直是空的。除非你确定要一个完全空库。
-7. 实时日志：journalctl -u $SERVICE -f
+8. 实时日志：journalctl -u $SERVICE -f
 
-★ 如果扫码仍不通：改上面两项后台设置即可生效，**不用重新部署**；
+★ 如果扫码仍不通：改上面三项后台设置即可生效，**不用重新部署**；
   要改本机配置（corp_id/secret/base_url）就编辑 $APP_DIR/wecom_config.json，
-  保存后即刻生效（配置热重载），再跑 `bash $APP_DIR/dev_check.sh` 复核。
+  保存后即刻生效（配置热重载），再跑 \`bash $APP_DIR/dev_check.sh\` 复核。
 EOF
