@@ -16,8 +16,8 @@
 ## 2. 五分钟部署
 
 ```bash
-# ① 拉代码
-git clone <仓库地址> ai-tools && cd ai-tools
+# ① 拉代码（公开仓库，无需凭据）
+git clone https://github.com/yu452829263/ai-toolbox.git ai-tools && cd ai-tools
 
 # ② 一键部署（会自己装 systemd、测连通、跑体检）
 bash ai-tools-server/deploy/deploy.sh <CorpID> <AgentId> <Secret> https://aitoolbox.maihaoche.com
